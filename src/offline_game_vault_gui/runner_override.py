@@ -122,6 +122,42 @@ def _safe_companion_path(value: Any, field: str) -> PurePosixPath:
     return path
 
 
+def _remap_neutral_protected_files(
+    value: list[Any],
+    *,
+    prefix_destination: str,
+) -> list[dict[str, Any]]:
+    """Map neutral ``prefix/...`` declarations to the derived prefix root."""
+    destination = _safe_companion_path(
+        prefix_destination,
+        "derived Direct-Wine prefix destination",
+    )
+    neutral_prefix = PurePosixPath("prefix")
+    result: list[dict[str, Any]] = []
+
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise RunnerOverrideError(
+                "Every neutral protected-file declaration must be an object"
+            )
+        path = _safe_companion_path(
+            item.get("path"),
+            f"protected_files[{index}].path",
+        )
+        if path == neutral_prefix or not path.is_relative_to(neutral_prefix):
+            raise RunnerOverrideError(
+                "Neutral protected files must be declared below prefix/"
+            )
+
+        remapped = dict(item)
+        remapped["path"] = destination.joinpath(
+            *path.parts[1:]
+        ).as_posix()
+        result.append(remapped)
+
+    return result
+
+
 def _read_host_contract(
     capsule_path: Path,
     profile: dict[str, Any],
@@ -330,6 +366,10 @@ def build_derived_capsule(
             game_source_path,
             posixpath.dirname(game_destination_path),
         )
+        remapped_protected = _remap_neutral_protected_files(
+            protected,
+            prefix_destination=prefix_destination,
+        )
         derived_profile["playable"] = {
             "schema": 0,
             "backend": "wine",
@@ -363,7 +403,7 @@ def build_derived_capsule(
                     "target": game_link_target,
                 }
             ],
-            "protected_files": protected,
+            "protected_files": remapped_protected,
         }
         launch = derived_profile.setdefault("launch", {})
         launch.update({

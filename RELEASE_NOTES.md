@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.2.5
+
+### Direct-Wine protected-path correction
+
+- Remapped neutral `prefix/...` protected-file declarations to the actual
+  derived prefix location under `source/payload/prefix-template`.
+- Added a filesystem-level regression test that verifies the protected
+  executable through the generated relative game-directory link.
+- Kept the neutral game object materialized only once and preserved the
+  no-duplicate-dependency layout introduced in 0.2.3.
+- Direct-Wine remains `not_tested` until a complete launch, save load, normal
+  shutdown, and clean removal are accepted on a real materialization.
+
 ## 0.2.4
 
 ### Public repository preparation

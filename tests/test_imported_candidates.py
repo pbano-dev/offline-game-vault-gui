@@ -204,6 +204,20 @@ class ImportedCandidateTests(unittest.TestCase):
                     "target": "../../../game",
                 }],
             )
+            self.assertEqual(
+                profile["playable"]["protected_files"],
+                [{
+                    "path": (
+                        "source/payload/prefix-template/"
+                        "drive_c/Games/Imported/Imported.exe"
+                    ),
+                    "digest": (
+                        "sha256:"
+                        + hashlib.sha256(b"game").hexdigest()
+                    ),
+                    "size": 4,
+                }],
+            )
             self.assertIn("proton9", profile["dependencies"])
             self.assertEqual(
                 len({
@@ -211,6 +225,44 @@ class ImportedCandidateTests(unittest.TestCase):
                     for item in profile["playable"]["layout"]
                 }),
                 len(profile["playable"]["layout"]),
+            )
+
+    def test_direct_wine_protected_file_resolves_through_game_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capsule_path = capsule(
+                root,
+                profile_id="linux-direct-wine",
+                adapter="wine",
+                contract="ogv-direct-wine-neutral-v1",
+            )
+            derived = build_derived_capsule(
+                capsule_path, "linux-direct-wine", runner()
+            )
+            playable = derived.document["profiles"][0]["playable"]
+
+            stage = root / "stage"
+            prefix = stage / playable["paths"]["prefix"]
+            game = stage / "source/payload/game"
+            prefix.mkdir(parents=True)
+            game.mkdir(parents=True)
+            (game / "Imported.exe").write_bytes(b"game")
+
+            operation = playable["prefix_operations"][0]
+            link = stage / operation["path"]
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(operation["target"])
+
+            protected = playable["protected_files"][0]
+            protected_path = stage / protected["path"]
+            self.assertTrue(protected_path.is_file())
+            self.assertFalse(protected_path.is_symlink())
+            self.assertEqual(protected_path.read_bytes(), b"game")
+            self.assertEqual(
+                "sha256:" + hashlib.sha256(
+                    protected_path.read_bytes()
+                ).hexdigest(),
+                protected["digest"],
             )
 
     def test_neutral_bottles_source_preserves_materialization_wrapper(self) -> None:
