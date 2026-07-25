@@ -207,16 +207,21 @@ class ImportedCandidateTests(unittest.TestCase):
             self.assertEqual(
                 profile["playable"]["protected_files"],
                 [{
-                    "path": (
-                        "source/payload/prefix-template/"
-                        "drive_c/Games/Imported/Imported.exe"
-                    ),
+                    "path": "source/payload/game/Imported.exe",
                     "digest": (
                         "sha256:"
                         + hashlib.sha256(b"game").hexdigest()
                     ),
                     "size": 4,
                 }],
+            )
+            self.assertEqual(
+                profile["launch"]["entrypoint"],
+                "source/payload/game/Imported.exe",
+            )
+            self.assertEqual(
+                profile["launch"]["working_directory"],
+                "source/payload/game",
             )
             self.assertIn("proton9", profile["dependencies"])
             self.assertEqual(
@@ -227,7 +232,7 @@ class ImportedCandidateTests(unittest.TestCase):
                 len(profile["playable"]["layout"]),
             )
 
-    def test_direct_wine_protected_file_resolves_through_game_link(self) -> None:
+    def test_direct_wine_launch_and_protected_file_use_real_game_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             capsule_path = capsule(
@@ -255,6 +260,13 @@ class ImportedCandidateTests(unittest.TestCase):
 
             protected = playable["protected_files"][0]
             protected_path = stage / protected["path"]
+            launch = derived.document["profiles"][0]["launch"]
+            entrypoint_path = stage / launch["entrypoint"]
+            working_directory_path = stage / launch["working_directory"]
+            self.assertTrue(entrypoint_path.is_file())
+            self.assertFalse(entrypoint_path.is_symlink())
+            self.assertTrue(working_directory_path.is_dir())
+            self.assertFalse(working_directory_path.is_symlink())
             self.assertTrue(protected_path.is_file())
             self.assertFalse(protected_path.is_symlink())
             self.assertEqual(protected_path.read_bytes(), b"game")

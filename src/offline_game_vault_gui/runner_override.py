@@ -126,11 +126,26 @@ def _remap_neutral_protected_files(
     value: list[Any],
     *,
     prefix_destination: str,
+    game_destination_in_prefix: str,
+    game_source_destination: str,
 ) -> list[dict[str, Any]]:
-    """Map neutral ``prefix/...`` declarations to the derived prefix root."""
-    destination = _safe_companion_path(
+    """Map neutral protected files to real, non-symlinked derived paths.
+
+    Files below ``prefix/<game_destination_in_prefix>`` are mapped to the
+    materialized game source. Other files below ``prefix/`` remain mapped to
+    the derived prefix root.
+    """
+    prefix_root = _safe_companion_path(
         prefix_destination,
         "derived Direct-Wine prefix destination",
+    )
+    game_prefix = _safe_companion_path(
+        f"prefix/{game_destination_in_prefix}",
+        "neutral Direct-Wine game destination",
+    )
+    game_root = _safe_companion_path(
+        game_source_destination,
+        "derived Direct-Wine game source destination",
     )
     neutral_prefix = PurePosixPath("prefix")
     result: list[dict[str, Any]] = []
@@ -150,9 +165,13 @@ def _remap_neutral_protected_files(
             )
 
         remapped = dict(item)
-        remapped["path"] = destination.joinpath(
-            *path.parts[1:]
-        ).as_posix()
+        if path.is_relative_to(game_prefix):
+            relative = path.relative_to(game_prefix)
+            remapped["path"] = game_root.joinpath(relative).as_posix()
+        else:
+            remapped["path"] = prefix_root.joinpath(
+                *path.parts[1:]
+            ).as_posix()
         result.append(remapped)
 
     return result
@@ -369,6 +388,8 @@ def build_derived_capsule(
         remapped_protected = _remap_neutral_protected_files(
             protected,
             prefix_destination=prefix_destination,
+            game_destination_in_prefix=game_destination,
+            game_source_destination=game_source_path,
         )
         derived_profile["playable"] = {
             "schema": 0,
@@ -406,9 +427,22 @@ def build_derived_capsule(
             "protected_files": remapped_protected,
         }
         launch = derived_profile.setdefault("launch", {})
+        working_path = PurePosixPath(working_directory)
+        game_destination_relative = PurePosixPath(game_destination)
+        if working_path == game_destination_relative:
+            derived_working_directory = game_source_path
+        elif working_path.is_relative_to(game_destination_relative):
+            derived_working_directory = PurePosixPath(game_source_path).joinpath(
+                working_path.relative_to(game_destination_relative)
+            ).as_posix()
+        else:
+            derived_working_directory = PurePosixPath(prefix_destination).joinpath(
+                working_path
+            ).as_posix()
+
         launch.update({
-            "entrypoint": f"{game_destination_path}/{entrypoint}",
-            "working_directory": f"{prefix_destination}/{working_directory}",
+            "entrypoint": f"{game_source_path}/{entrypoint}",
+            "working_directory": derived_working_directory,
             "arguments": launch.get("arguments", []),
             "environment": launch.get("environment", {}),
             "network": neutral.get("network", "host_default"),

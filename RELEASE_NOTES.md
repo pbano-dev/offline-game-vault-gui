@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.2.6
+
+### Direct-Wine real-path correction
+
+- Launches imported neutral games from the real materialized game directory
+  instead of from the compatibility symlink inside the prefix.
+- Uses the real game directory as the declared working directory when the
+  neutral contract requests the game installation directory.
+- Remaps protected game files to the real game source while retaining the
+  prefix link for Windows-path compatibility.
+- Adds regression coverage that rejects a symlinked working directory and
+  verifies the real entrypoint, working directory, and protected executable.
+- Direct-Wine remains `not_tested` until a complete real launch, save load,
+  normal shutdown, and clean removal are accepted.
+
 ## 0.2.5
 
 ### Direct-Wine protected-path correction
