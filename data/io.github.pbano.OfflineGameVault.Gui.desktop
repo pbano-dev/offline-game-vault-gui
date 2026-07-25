@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OfflineGameVault
+Comment=Materialize and manage offline game vault capsules
+Exec=ogv-gui
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
