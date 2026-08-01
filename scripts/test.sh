@@ -1,42 +1,57 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-umask 077
-export PYTHONDONTWRITEBYTECODE=1
 
-project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-export PYTHONPATH="${project_root}/src"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$ROOT"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-bridge="${project_root}/scripts/ogv-state-capsule-bridge.py"
-[[ -x "$bridge" ]] || {
-    printf 'Bridge is not executable: %s\n' "$bridge" >&2
-    exit 1
-}
-[[ "$(head -c 22 -- "$bridge")" == '#!/usr/bin/env python3' ]] || {
-    printf 'The bridge shebang is not at the first byte\n' >&2
-    exit 1
-}
-python3 -S -B "$bridge" --help >/dev/null
+python3 -B -m unittest discover -s tests -p 'test_*.py' -v
 
-python3 -S -B -m unittest discover -s "${project_root}/tests" -v
+python3 -B - <<'PY'
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+root = Path.cwd()
+files = sorted(
+    path
+    for base in (root / "src", root / "tests", root / "scripts")
+    for path in base.rglob("*.py")
+)
+for path in files:
+    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+print(f"Python AST VERIFIED: {len(files)} file(s)")
+PY
 
 while IFS= read -r -d '' script; do
-    bash -n -- "$script"
-done < <(
-    find "${project_root}/scripts" -type f -name '*.sh' -print0
-)
-printf 'Shell syntax: OK\n'
+    bash -n "$script"
+done < <(find scripts -type f -name '*.sh' -print0 | sort -z)
 
-python3 -S -B -c '
+echo "Shell syntax VERIFIED"
+
+python3 -B - <<'PY'
 from pathlib import Path
-import ast
-import sys
 
-root = Path(sys.argv[1])
-for path in sorted(root.rglob("*.py")):
-    if any(part in {".git", ".venv", "venv", "__pycache__", "build", "dist"} for part in path.parts):
+root = Path.cwd()
+problems = []
+for path in sorted(root.rglob("*")):
+    if not path.is_file() or any(
+        part in {".git", ".venv", "__pycache__", "dist", "build"}
+        for part in path.parts
+    ):
         continue
-    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-print("Python AST: OK")
-' "$project_root"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        continue
+    for number, line in enumerate(lines, 1):
+        if line.rstrip(" \t") != line:
+            problems.append(f"{path.relative_to(root)}:{number}: trailing whitespace")
+if problems:
+    raise SystemExit("\n".join(problems))
+print("Whitespace audit VERIFIED")
+PY
 
-"$project_root/scripts/audit-privacy.sh" "$project_root"
+./scripts/audit-privacy.sh
+echo "Repository validation VERIFIED"

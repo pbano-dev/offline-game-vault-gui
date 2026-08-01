@@ -1,29 +1,44 @@
 # Security model
 
-## Vault protection
+## Immutable input
 
-The collection is exposed read-only to materialization workers. Writable access is limited to validated output locations and explicitly managed state locations.
+The GUI treats the Vault as read-only input. The core verifies canonical
+objects and materializes outside the Vault or into the explicitly selected
+managed Bottles directory.
 
-## Path safety
+## No component acquisition
 
-The application rejects traversal, escaping symbolic links, unsafe archive members, unexpected special files, and destinations outside the selected local root.
+The GUI performs no network lookup or download. It only lists runners verified by core 0.11.3 from the current Vault. Shared UMU runtimes are resolved internally from objects marked shared. No system Wine,
+system Proton, or arbitrary installed Bottles runner is used as fallback.
 
-## Network policy
+## Safe paths
 
-Network isolation is separate from preservation. A backend may request an isolated execution mode, but the result must be functionally tested. Disabling runtime updates is not equivalent to network isolation.
+The GUI rejects:
 
-## Runner handling
+- a destination parent inside the Vault;
+- symlinked destination or Bottles directories;
+- an existing unrecognized target for materialization;
+- missing capsule files;
+- backend-incompatible runner selections.
 
-Runners are selected from preserved objects. The GUI does not download missing runners and does not silently fall back to another runner.
+The core remains responsible for archive traversal, special files, symlink
+escape, object hashes, and publication semantics.
 
-## Receipts and seals
+## Acceptance is not access control
 
-Critical collection seals are checked before and after operations. Derived selections, temporary overlays, materializations, and removals produce receipts.
+`verified`, `candidate`, `not_tested`, `experimental`, and `unavailable` are
+evidence states. They are not security permissions. Blocking a test because it
+has not already been tested creates a circular workflow and is intentionally
+avoided.
 
-## Privacy
+## Removal
 
-Raw runtime logs are not archival evidence by default. They may expose host paths, usernames, hostnames, UIDs, UUIDs, and session data. Store sanitized summaries instead.
+Removal is destructive to mutable derivatives. The GUI requires explicit
+confirmation that state was preserved and, for Bottles, that related processes
+were stopped. The immutable Vault is never removed.
 
-## Acceptance
+## Logs and privacy
 
-A successful extraction or launcher generation proves structural completion only. Gameplay, saves, DLC, video, audio, input, network policy, normal exit, relocation, and clean restoration require separate evidence.
+Operation logs can contain host paths. Do not archive raw GUI, Wine, Proton,
+UMU, Bottles, DXVK, or VKD3D logs in a public package. Run the repository
+privacy audit before release.

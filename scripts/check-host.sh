@@ -1,152 +1,104 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-umask 077
 
-project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-if [[ -n "${OGV_COLLECTION_ROOT:-}" ]]; then
-    collection_root="$OGV_COLLECTION_ROOT"
-elif [[ -r "/run/media/system/Games/OfflineGameVault/INDEX.json" ]]; then
-    collection_root="/run/media/system/Games/OfflineGameVault"
-else
-    collection_root="${HOME:?HOME is not defined}/Games/OfflineGameVault"
-fi
-bwrap_path="${OGV_BWRAP:-/usr/bin/bwrap}"
-ogv_path="${OGV_EXECUTABLE:-}"
-state_bridge="${OGV_STATE_BRIDGE:-$project_root/scripts/ogv-state-capsule-bridge.py}"
-status=0
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-if command -v python3 >/dev/null 2>&1; then
-    printf 'VERIFIED: python3 -> %s\n' "$(command -v python3)"
-else
-    printf 'MISSING: python3\n' >&2
-    status=1
-fi
+python3 -B - <<'PY'
+from __future__ import annotations
 
-if [[ -x "$bwrap_path" && ! -d "$bwrap_path" ]]; then
-    printf 'VERIFIED: bubblewrap -> %s\n' "$bwrap_path"
-else
-    printf 'MISSING: executable bubblewrap -> %s\n' "$bwrap_path" >&2
-    status=1
-fi
+import os
+import sys
+from pathlib import Path
 
-if [[ -z "$ogv_path" ]] && command -v ogv >/dev/null 2>&1; then
-    ogv_path="$(command -v ogv)"
-fi
-if [[ -z "$ogv_path" \
-      && -x "$project_root/scripts/ogv-source-wrapper.sh" ]]; then
-    sibling_root="$project_root/../offline-game-vault"
-    parent_root="$project_root/.."
-
-    if [[ -f "$sibling_root/pyproject.toml" \
-       && -f "$sibling_root/src/offline_game_vault/cli.py" ]]; then
-        ogv_path="$project_root/scripts/ogv-source-wrapper.sh"
-        printf 'VERIFIED: sibling offline-game-vault checkout detected\n'
-    elif [[ -f "$parent_root/pyproject.toml" \
-         && -f "$parent_root/src/offline_game_vault/cli.py" ]]; then
-        ogv_path="$project_root/scripts/ogv-source-wrapper.sh"
-        printf 'VERIFIED: parent offline-game-vault checkout detected\n'
-    fi
-fi
-
-if [[ -n "$ogv_path" && -x "$ogv_path" && ! -d "$ogv_path" ]]; then
-    help_text="$("$ogv_path" --help 2>&1 || true)"
-    missing_commands=()
-    for required in \
-        materialize \
-        materialize-playable \
-        verify-playable \
-        run-playable \
-        deploy-bottles \
-        verify-bottles-deployment \
-        run-bottles
-    do
-        grep -q -- "$required" <<<"$help_text" || \
-            missing_commands+=("$required")
-    done
-    if ((${#missing_commands[@]} == 0)); then
-        printf 'VERIFIED: core with materialization and execution -> %s\n' \
-            "$ogv_path"
-    else
-        printf 'MISSING: OGV commands: %s\n' \
-            "${missing_commands[*]}" >&2
-        status=1
-    fi
-else
-    printf 'MISSING: ogv is unavailable\n' >&2
-    status=1
-fi
-
-if [[ -x "$state_bridge" && ! -d "$state_bridge" ]]; then
-    if "$state_bridge" --help >/dev/null 2>&1; then
-        printf 'VERIFIED: state bridge for overlays -> %s\n' \
-            "$state_bridge"
-    else
-        printf 'MISSING: state bridge does not respond to --help -> %s\n' \
-            "$state_bridge" >&2
-        status=1
-    fi
-else
-    printf 'MISSING: executable state bridge -> %s\n' \
-        "$state_bridge" >&2
-    status=1
-fi
+from offline_game_vault_gui.config import resolve_collection_root
+from offline_game_vault_gui.core import inspect_core
+from offline_game_vault_gui.experimental_service import (
+    discover_bottles_path,
+    list_preserved_runners,
+)
 
 
-if command -v flatpak >/dev/null 2>&1; then
-    bottles_cli=(
-        "$(command -v flatpak)"
-        run
-        --command=bottles-cli
-        com.usebottles.bottles
+def result(label: str, status: str, detail: str = "") -> None:
+    suffix = f": {detail}" if detail else ""
+    print(f"{status:8} {label}{suffix}")
+
+
+failed = False
+
+if sys.version_info >= (3, 11):
+    result("Python >= 3.11", "VERIFIED", sys.version.split()[0])
+else:
+    result("Python >= 3.11", "FAILED", sys.version.split()[0])
+    failed = True
+
+try:
+    import gi
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Adw", "1")
+    from gi.repository import Adw, Gtk  # noqa: F401
+except Exception as exc:
+    result("GTK4/libadwaita bindings", "FAILED", str(exc))
+    failed = True
+else:
+    result("GTK4/libadwaita bindings", "VERIFIED")
+
+try:
+    core = inspect_core()
+except Exception as exc:
+    result("Offline Game Vault core 0.11.3+", "FAILED", str(exc))
+    failed = True
+else:
+    result(
+        "Offline Game Vault core",
+        "VERIFIED",
+        f"{core.version} ({core.origin})",
     )
-    if "${bottles_cli[@]}" --json info bottles-path >/dev/null 2>&1 \
-       && "${bottles_cli[@]}" --json list components \
-            -f category:runners >/dev/null 2>&1; then
-        printf 'VERIFIED: Bottles Flatpak and bottles-cli\n'
-    else
-        printf 'WARNING: Bottles is unavailable; the Bottles backend will be disabled\n' >&2
-    fi
-else
-    printf 'WARNING: flatpak is unavailable; the Bottles backend will be disabled\n' >&2
-fi
 
-gtk_probe='
-import gi
-gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
-gtk = ".".join(map(str, (
-    Gtk.get_major_version(),
-    Gtk.get_minor_version(),
-    Gtk.get_micro_version(),
-)))
-adw = ".".join(map(str, (
-    Adw.get_major_version(),
-    Adw.get_minor_version(),
-    Adw.get_micro_version(),
-)))
-print(f"VERIFIED: GTK {gtk}; libadwaita {adw}")
-'
-if python3 -B -c "$gtk_probe"; then
-    :
-else
-    printf 'MISSING: PyGObject, GTK 4, or libadwaita\n' >&2
-    status=1
-fi
+collection = resolve_collection_root().expanduser()
+try:
+    collection = collection.resolve(strict=True)
+    required = (
+        collection / "INDEX.json",
+        collection / "01_IMMUTABLE_VAULT" / "VAULT_INVENTORY.json",
+        collection / "02_CAPSULES",
+    )
+    if not all(
+        path.exists() and not path.is_symlink()
+        for path in required
+    ):
+        raise OSError("collection control plane is incomplete")
+except OSError as exc:
+    result("Collection", "PENDING", f"{collection}: {exc}")
+else:
+    result("Collection", "VERIFIED", str(collection))
+    try:
+        runners, warnings = list_preserved_runners(collection)
+    except Exception as exc:
+        result("Preserved runners", "FAILED", str(exc))
+        failed = True
+    else:
+        result("Preserved runners", "VERIFIED", str(len(runners)))
+        for warning in warnings:
+            result("Runner warning", "PENDING", warning)
 
-if [[ -L "$collection_root" ]]; then
-    printf 'ERROR: the collection is a symbolic link\n' >&2
-    status=1
-elif [[ -r "$collection_root/01_IMMUTABLE_VAULT/VAULT_INVENTORY.json" \
-     && -r "$collection_root/INDEX.json" \
-     && -d "$collection_root/02_CAPSULES" \
-     && -d "$collection_root/03_PERSISTENT_STATE" \
-     && -d "$collection_root/04_RECEIPTS" ]]; then
-    printf 'VERIFIED: minimum structure -> %s\n' "$collection_root"
-else
-    printf 'MISSING: readable collection or minimum structure -> %s\n' \
-        "$collection_root" >&2
-    status=1
-fi
 
-exit "$status"
+try:
+    bottles = discover_bottles_path()
+except Exception as exc:
+    result("Managed Bottles directory", "PENDING", str(exc))
+else:
+    result("Managed Bottles directory", "VERIFIED", str(bottles))
+
+bwrap = Path(os.environ.get("OGV_BWRAP", "/usr/bin/bwrap"))
+if bwrap.is_file() and os.access(bwrap, os.X_OK):
+    result("Bubblewrap", "VERIFIED", str(bwrap))
+else:
+    result(
+        "Bubblewrap",
+        "PENDING",
+        "required only by core paths that use it",
+    )
+
+raise SystemExit(1 if failed else 0)
+PY

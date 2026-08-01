@@ -1,50 +1,54 @@
-# Acceptance checklist
+# Acceptance boundary
 
-## Structural
+## Structural result
 
-- [ ] Capsule and profile selected.
-- [ ] Runner selected or explicitly left unbound.
-- [ ] All required objects verified.
-- [ ] Save selection receipt created.
-- [ ] Destination is local and validated.
-- [ ] Critical vault seals unchanged.
+A successful GUI materialization establishes only that:
 
-## Functional
+- the selected capsule was readable;
+- preserved objects and runner matched the Vault records;
+- path and archive checks passed;
+- the requested backend derivative was assembled;
+- its backend receipt was written.
 
-- [ ] Canonical launch succeeds.
-- [ ] Steam is not started.
-- [ ] Existing save loads when selected.
-- [ ] No save is present when the clean baseline is selected.
-- [ ] DLC is recognized and real DLC content loads.
-- [ ] Video works.
-- [ ] Audio works.
-- [ ] Controller input works.
-- [ ] Hotplug works when relevant.
-- [ ] Network policy is effective.
-- [ ] Normal exit succeeds.
-- [ ] Relocation succeeds.
-- [ ] Clean restoration succeeds.
+It does not establish that the game is functionally accepted.
 
-## Backend-specific
+## Experimental state
 
-### Bottles
+Every user-requested combination is recorded as experimental and starts with:
 
-- [ ] Preserved Bottles backend matches.
-- [ ] Selected runner is installed in Bottles.
-- [ ] Derived bottle source passes preflight checks.
-- [ ] Deployment completes.
-- [ ] Temporary heavy source is removed only after success.
+```text
+acceptance_inherited: false
+```
 
-### Direct-Wine
+This remains true even when the source profile or runner participated in a
+different verified combination.
 
-- [ ] Each dependency appears once in playable layout.
-- [ ] Prefix operations complete.
-- [ ] Runner path is valid.
-- [ ] Launcher uses relative paths.
-- [ ] Selected save set is restored atomically.
+## Functional acceptance
 
-### Windows export
+Acceptance belongs to the exact combination of:
 
-- [ ] Export contains no Wine prefix or Linux runner.
-- [ ] Save installer targets documented Windows locations.
-- [ ] Native Windows launch is tested before verification.
+```text
+capsule
+source profile/layout
+backend
+runner or Proton
+shared UMU runtime identity where applicable
+state selection
+host
+```
+
+A real acceptance run should cover, as applicable:
+
+- canonical launch;
+- Steam not running;
+- exterior network blocked;
+- existing save loaded;
+- DLC recognized and real DLC content loaded;
+- video and audio;
+- controller and hotplug;
+- normal shutdown;
+- relocation;
+- clean restoration.
+
+The GUI allows testing before acceptance because testing is how acceptance
+evidence is created.

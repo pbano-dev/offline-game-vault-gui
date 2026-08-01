@@ -1,72 +1,92 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-umask 077
 
-project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-output_dir="${1:-$project_root/dist}"
-mkdir -p -- "$output_dir"
-output_dir="$(cd -- "$output_dir" && pwd -P)"
-
-"$project_root/scripts/test.sh"
-
-version="$(
-    python3 -S -B - "$project_root/pyproject.toml" <<'PY'
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+OUT_DIR="${1:-$ROOT/dist}"
+VERSION="$(
+    python3 - "$ROOT/pyproject.toml" <<'PY'
 from pathlib import Path
+import re
 import sys
-import tomllib
 
-document = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-print(document["project"]["version"])
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r'(?m)^version = "([^"]+)"$', text)
+if not match:
+    raise SystemExit("version not found")
+print(match.group(1))
 PY
 )"
-package_name="offline-game-vault-gui-${version}"
-archive="$output_dir/${package_name}-source.tar.gz"
-source_date_epoch="${SOURCE_DATE_EPOCH:-0}"
+NAME="offline-game-vault-gui-$VERSION"
+OUT="$OUT_DIR/$NAME.tar.gz"
 
-temporary_root="$(mktemp -d)"
-cleanup() {
-    rm -rf -- "$temporary_root"
+mkdir -p -- "$OUT_DIR"
+
+python3 - "$ROOT" "$OUT" "$NAME" <<'PY'
+from __future__ import annotations
+
+import gzip
+import io
+import os
+import tarfile
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+output = Path(sys.argv[2]).resolve()
+prefix = sys.argv[3]
+
+excluded = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    "build",
+    "dist",
 }
-trap cleanup EXIT
+files = [
+    path
+    for path in root.rglob("*")
+    if path.is_file()
+    and not path.is_symlink()
+    and not any(part in excluded for part in path.relative_to(root).parts)
+    and path != output
+]
+files.sort(key=lambda path: path.relative_to(root).as_posix())
 
-stage="$temporary_root/$package_name"
-mkdir -p -- "$stage"
+directories = {prefix}
+for path in files:
+    current = Path(prefix)
+    for part in path.relative_to(root).parts[:-1]:
+        current = current / part
+        directories.add(current.as_posix())
 
-tar \
-    --exclude='./.git' \
-    --exclude='./.venv' \
-    --exclude='./venv' \
-    --exclude='./__pycache__' \
-    --exclude='*/__pycache__' \
-    --exclude='./.pytest_cache' \
-    --exclude='./.mypy_cache' \
-    --exclude='./.ruff_cache' \
-    --exclude='./build' \
-    --exclude='./dist' \
-    --exclude='*.pyc' \
-    --exclude='*.pyo' \
-    --exclude='*.log' \
-    --exclude='*.tar.gz' \
-    -C "$project_root" \
-    -cf - . |
-    tar -C "$stage" -xf -
+with output.open("wb") as raw:
+    with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
+        with tarfile.open(
+            fileobj=gz,
+            mode="w",
+            format=tarfile.PAX_FORMAT,
+        ) as archive:
+            for directory in sorted(directories):
+                info = tarfile.TarInfo(directory)
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                info.mtime = 0
+                archive.addfile(info)
 
-find "$stage" -type d -name '__pycache__' -prune -exec rm -rf -- {} +
-find "$stage" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.log' \) -delete
+            for path in files:
+                relative = path.relative_to(root).as_posix()
+                data = path.read_bytes()
+                info = tarfile.TarInfo(f"{prefix}/{relative}")
+                info.type = tarfile.REGTYPE
+                info.size = len(data)
+                info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                info.mtime = 0
+                archive.addfile(info, io.BytesIO(data))
+PY
 
-"$stage/scripts/audit-privacy.sh" "$stage"
-
-tar \
-    --sort=name \
-    --format=pax \
-    --pax-option=delete=atime,delete=ctime \
-    --mtime="@$source_date_epoch" \
-    --owner=0 \
-    --group=0 \
-    --numeric-owner \
-    -C "$temporary_root" \
-    -cf - "$package_name" |
-    gzip -n >"$archive"
-
-printf 'Created: %s\n' "$archive"
-sha256sum -- "$archive"
+sha256sum -- "$OUT"

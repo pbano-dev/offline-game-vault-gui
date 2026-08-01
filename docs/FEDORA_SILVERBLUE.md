@@ -1,15 +1,12 @@
-# Fedora Atomic / Silverblue notes
+# Fedora Silverblue
 
-The reference host is an immutable Fedora-family desktop.
+Install GTK4/libadwaita Python bindings and Bubblewrap through the host. Keep
+the core and GUI source checkouts outside Flatpak sandboxes unless explicitly
+testing a packaged application.
 
-## Development dependencies
+For a source checkout, set `OGV_SOURCE_ROOT` when the core is not installed as
+`ogv`. Configure `OGV_COLLECTION_ROOT` only when collection auto-discovery is
+not appropriate.
 
-Install GTK4, libadwaita, and Python bindings through the host or a development container. The project itself is installed in a Python virtual environment.
-
-## Bottles
-
-The supported Bottles installation is the Flatpak application. The GUI checks the preserved shared-backend contract and does not download missing runners.
-
-## Filesystem considerations
-
-Use a POSIX filesystem for materializations that contain Wine prefixes, symbolic links, executable bits, or names such as `dosdevices/c:` and `dosdevices/z:`. Do not deploy those trees directly on NTFS, FAT, or exFAT.
+Bottles remains a separate Flatpak integration and requires
+the directory reported by `bottles-cli info bottles-path`.

@@ -1,89 +1,103 @@
 # Release notes
 
-## 0.2.6
+## 0.3.3
 
-### Direct-Wine real-path correction
+### Managed Bottles deployment
 
-- Launches imported neutral games from the real materialized game directory
-  instead of from the compatibility symlink inside the prefix.
-- Uses the real game directory as the declared working directory when the
-  neutral contract requests the game installation directory.
-- Remaps protected game files to the real game source while retaining the
-  prefix link for Windows-path compatibility.
-- Adds regression coverage that rejects a symlinked working directory and
-  verifies the real entrypoint, working directory, and protected executable.
-- Direct-Wine remains `not_tested` until a complete real launch, save load,
-  normal shutdown, and clean removal are accepted.
+- Requires core 0.11.3.
+- The GUI discovers the active managed Bottles directory through the core and
+  shows it as read-only information; it cannot be replaced with an arbitrary
+  output directory.
+- Bottles materialization is requested by bottle name only. The core stages
+  and publishes inside the directory reported by `bottles-cli`.
 
-## 0.2.5
+### Exact offline UMU runtime resolution
 
-### Direct-Wine protected-path correction
+- UMU exposes no backend-template selector.
+- The selected preserved Proton runner determines the required Steam Linux
+  Runtime through its archived `toolmanifest.vdf`.
+- Incomplete runtimes and runtimes from a different family are excluded before
+  materialization. A missing exact match is reported before a game tree is
+  copied.
+- The generated `JUGAR.sh`, `VERIFICAR.sh`, and `DESINSTALAR.sh` remain the
+  only operational entry points used by the GUI.
 
-- Remapped neutral `prefix/...` protected-file declarations to the actual
-  derived prefix location under `source/payload/prefix-template`.
-- Added a filesystem-level regression test that verifies the protected
-  executable through the generated relative game-directory link.
-- Kept the neutral game object materialized only once and preserved the
-  no-duplicate-dependency layout introduced in 0.2.3.
-- Direct-Wine remains `not_tested` until a complete launch, save load, normal
-  shutdown, and clean removal are accepted on a real materialization.
+## 0.3.2
 
-## 0.2.4
+### Canonical materialization operations
 
-### Public repository preparation
+- Requires core 0.11.2.
+- Bottles, Direct-Wine, and UMU materializations are recognized only when they
+  contain executable `JUGAR.sh`, `VERIFICAR.sh`, and `DESINSTALAR.sh`.
+- **Materialize & Play** first materializes and then invokes the generated
+  `JUGAR.sh`; the GUI no longer reconstructs backend launch commands.
+- Verify, Play, and Remove call the corresponding generated script for every
+  backend.
 
-- Prepared a standalone, Git-ready source tree.
-- Standardized application labels, diagnostics, generated launchers, scripts,
-  test fixtures, and documentation in English.
-- Consolidated all release information in this single file.
-- Added a repository privacy audit.
-- Added a reproducible source-packaging helper.
-- Added continuous integration and development documentation.
-- Removed caches, compiled Python files, local logs, and generated work trees.
+### Offline UMU enforcement
 
-### Functional changes carried forward
+- UMU materialization must contain a complete preserved `steamrtN` runtime.
+- Missing runtime components abort before launch.
+- Network isolation and `UMU_RUNTIME_UPDATE=0` are enforced by the generated
+  UMU operational runtime, preventing repair downloads.
 
-- Supports imported neutral game objects.
-- Supports candidate profiles for Bottles, Direct-Wine, and Windows export.
-- Supports runner selection at materialization time.
-- Supports atomic multi-item save sets.
-- Converts neutral objects into derived Bottles sources while preserving the
-  materialization receipt and runner object.
-- Resolves Bottles sources under `objects/<object-id>`.
-- Generates Direct-Wine layouts in which each dependency appears only once.
-- Places the game inside a neutral Direct-Wine prefix through a relative link.
-- Performs preflight validation of derived Bottles sources.
-- Preserves compatibility with legacy single-item save sets and existing
-  capsules.
+## 0.3.1
 
-### Validation status
+### Destination-local Bottles staging
 
-- The packaged source tree passes 76 automated tests.
-- Python sources pass AST parsing.
-- Shell scripts pass `bash -n`.
-- The repository privacy audit passes.
-- Bottles materialization has been functionally tested with
-  ELDEN RING NIGHTREIGN:
-  - without a save set;
-  - with a multi-item save set.
-- Direct-Wine remains a candidate workflow pending functional acceptance after
-  the dependency-layout correction.
-- Native Windows export remains untested.
+- Requires core 0.11.1.
+- Bottles prematerialization now occurs inside the selected managed Bottles
+  directory instead of `/tmp`.
+- Hidden staging is cleaned after success or failure and final publication
+  remains atomic on the selected filesystem.
 
-## 0.2.3
+### Automatic UMU runtime resolution
 
-- Corrected Direct-Wine layout generation so a dependency cannot be emitted
-  twice in `playable.layout`.
-- Materialized neutral Direct-Wine sources once and exposed the game in the
-  prefix through a relative link.
+- Removed the **Preserved UMU backend** selector.
+- The GUI no longer exposes another game's capsule/profile as a backend choice.
+- UMU requests contain only the selected game, source layout, and preserved
+  Proton runner; core resolves a reusable shared runtime automatically.
+- No `--umu-backend` argument is emitted.
 
-## 0.2.2
+## 0.3.0
 
-- Corrected Bottles neutral-object resolution.
-- Preserved the wrapper receipt, runner object, and object-scoped source during
-  Bottles conversion.
-- Added a derived-source preflight check.
+### Experimental variants are user-selectable
 
-## 0.2.1
+- Every discovered game exposes Bottles, Direct-Wine, and UMU/Proton.
+- Removed title-specific and acceptance-status backend restrictions.
+- Profiles with `candidate`, `not_tested`, `experimental`, or `unavailable`
+  status remain selectable as source layouts.
+- When no exact backend profile exists, core 0.11.0 synthesizes one without
+  rewriting the capsule.
 
-- Corrected imported-candidate runner reuse and workspace preparation behavior.
+### Preserved runners only
+
+- Runner discovery is delegated to `ogv list-preserved-runners`.
+- Only hash-verified Vault objects are shown.
+- Proton runners may be offered to Bottles and Direct-Wine when the core
+  reports the Wine/Wineserver pair as structurally usable.
+- No download, host-runner fallback, or silent Bottles-runner reuse exists.
+
+### Materialize and play
+
+- Added a single **Materialize & Play** operation backed by
+  `ogv materialize-experimental --play`.
+- Existing experimental derivatives can be verified, played, and removed with
+  their backend-specific core commands.
+- Added selection of preserved UMU backend templates.
+- Windows export is intentionally omitted from this phase.
+
+### Core resolution
+
+- Requires core 0.11.0 or newer.
+- Validates command capabilities before enabling materialization.
+- Prefers an explicit or sibling source checkout over an older `ogv` in
+  `PATH`.
+- Adds a GUI checkout selector for the current session.
+
+### Validation
+
+- Unit tests cover unrestricted backend selection, structural runner
+  filtering, command construction, UMU templates, and old-core rejection.
+- Synthetic end-to-end tests exercise materialization and verification for
+  Bottles, Direct-Wine, and UMU against core 0.11.0.

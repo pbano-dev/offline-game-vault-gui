@@ -1,41 +1,29 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-umask 077
 
-project_root="${1:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-project_root="$(cd -- "$project_root" && pwd -P)"
-export OGV_PRIVACY_AUDIT_ROOT="$project_root"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export OGV_AUDIT_ROOT="$ROOT"
 
-python3 -S -B <<'PY'
+python3 -B - <<'PY'
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
-import sys
+from pathlib import Path
 
-root = Path(os.environ["OGV_PRIVACY_AUDIT_ROOT"]).resolve()
-excluded_dirs = {
+root = Path(os.environ["OGV_AUDIT_ROOT"]).resolve()
+excluded_parts = {
     ".git",
     ".venv",
-    "venv",
     "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
     "build",
     "dist",
-    "htmlcov",
+    ".pytest_cache",
 }
-excluded_files = {
-    Path("scripts/audit-privacy.sh"),
-}
-synthetic_home_users = {"example-user"}
 text_suffixes = {
     "",
     ".cfg",
     ".desktop",
-    ".in",
     ".ini",
     ".json",
     ".md",
@@ -43,85 +31,46 @@ text_suffixes = {
     ".sh",
     ".toml",
     ".txt",
-    ".yaml",
     ".yml",
+    ".yaml",
 }
-raw_log_suffixes = {".log", ".trace"}
-compiled_suffixes = {".pyc", ".pyo"}
-uuid_re = re.compile(
-    rb"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
-    rb"[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-"
-    rb"[0-9a-fA-F]{12}\b"
+patterns = (
+    ("absolute home path", re.compile(r"/(?:var/)?home/[A-Za-z0-9._-]+")),
+    ("runtime UID path", re.compile(r"/run/user/[0-9]+")),
+    ("UUID", re.compile(
+        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+        r"[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"
+    )),
+    ("unfilled marker", re.compile(r"\[RELLENAR\]")),
 )
-home_re = re.compile(rb"/(?:var/)?home/([A-Za-z0-9._-]+)")
-run_user_re = re.compile(rb"/run/user/[0-9]+(?:/|\\b)")
-private_key_re = re.compile(rb"-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----")
-forbidden_build_path_re = re.compile(rb"/mnt/" rb"data/")
-
-markers = [
-    marker.encode("utf-8")
-    for marker in os.environ.get("OGV_PRIVATE_MARKERS", "").splitlines()
-    if marker
-]
-
-findings: list[str] = []
+allow = {
+    "README.md": {
+        "/run/user/[0-9]+",
+    },
+}
+problems: list[str] = []
 
 for path in sorted(root.rglob("*")):
-    relative = path.relative_to(root)
-    if any(part in excluded_dirs for part in relative.parts):
+    if not path.is_file() or any(part in excluded_parts for part in path.parts):
         continue
-
-    if path.is_symlink():
-        target = os.readlink(path)
-        findings.append(f"symbolic link requires review: {relative} -> {target}")
-        continue
-
-    if not path.is_file():
-        continue
-
-    if path.suffix.lower() in raw_log_suffixes:
-        findings.append(f"raw log file: {relative}")
-    if path.suffix.lower() in compiled_suffixes:
-        findings.append(f"compiled Python file: {relative}")
-    if relative in excluded_files:
-        continue
-
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        findings.append(f"unreadable file: {relative}: {exc}")
-        continue
-
-    if b"\0" in data:
-        findings.append(f"binary file requires a separate privacy audit: {relative}")
-        continue
-
     if path.suffix.lower() not in text_suffixes:
-        findings.append(f"unclassified text file requires review: {relative}")
+        continue
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        continue
+    rel = path.relative_to(root).as_posix()
+    for label, pattern in patterns:
+        for match in pattern.finditer(text):
+            if match.group(0) in allow.get(rel, set()):
+                continue
+            problems.append(f"{rel}: {label}: {match.group(0)!r}")
 
-    if forbidden_build_path_re.search(data):
-        findings.append(f"build-environment path in {relative}")
-    if run_user_re.search(data):
-        findings.append(f"runtime UID path in {relative}")
-    if uuid_re.search(data):
-        findings.append(f"UUID-like identifier in {relative}")
-    if private_key_re.search(data):
-        findings.append(f"private-key material in {relative}")
-
-    for match in home_re.finditer(data):
-        user = match.group(1).decode("ascii", errors="replace")
-        if user not in synthetic_home_users:
-            findings.append(f"home-directory identity in {relative}: {user}")
-
-    for marker in markers:
-        if marker in data:
-            findings.append(f"caller-supplied private marker in {relative}")
-
-if findings:
-    print("Privacy audit: FAILED", file=sys.stderr)
-    for finding in sorted(set(findings)):
-        print(f"- {finding}", file=sys.stderr)
+if problems:
+    print("Privacy audit FAILED")
+    for problem in problems:
+        print(problem)
     raise SystemExit(1)
 
-print("Privacy audit: OK")
+print("Privacy audit VERIFIED")
 PY

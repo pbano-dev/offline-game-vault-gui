@@ -1,8 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=OfflineGameVault
-Comment=Materialize and manage offline game vault capsules
+Name=OfflineGameVault GUI
+Comment=Materialize preserved Windows games without modifying the Vault
 Exec=ogv-gui
 Icon=applications-games
 Terminal=false
 Categories=Game;Utility;
+Keywords=Wine;Proton;UMU;Bottles;Preservation;
+StartupNotify=true

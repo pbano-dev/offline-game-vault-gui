@@ -1,35 +1,8 @@
-# Python
 __pycache__/
 *.py[cod]
-*.pyo
 .venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Build and packaging
 build/
 dist/
 *.egg-info/
-*.whl
-*.tar.gz
-
-# Editors and operating systems
-.idea/
-.vscode/
-*.swp
-*~
-.DS_Store
-
-# Runtime and local configuration
-.env
-.env.*
-!.env.example
-*.log
-*.pid
-local/
-work/
-output/
+.coverage
+.pytest_cache/

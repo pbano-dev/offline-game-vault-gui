@@ -1,0 +1,23 @@
+{
+  "acceptance": "structurally-validated-not-functionally-accepted-on-private-games",
+  "architectural_scope": [
+    "user-requested-experimental-variants",
+    "all-games-bottles-direct-wine-umu",
+    "preserved-runners-only",
+    "core-0.11.3-capability-probe",
+    "canonical-operational-scripts-for-all-backends",
+    "materialize-and-play-through-generated-launcher",
+    "acceptance-is-descriptive-not-authorizing",
+    "automatic-shared-umu-runtime-resolution",
+    "destination-local-bottles-staging",
+    "offline-umu-runtime-validation-and-network-isolation"
+  ],
+  "base_branch": "main",
+  "base_commit": "dfb33dc40f432ec15b4c339bdb385feb618d372c",
+  "base_version": "0.2.6",
+  "project": "offline-game-vault-gui",
+  "schema": 0,
+  "status": "ready-to-commit-source-candidate",
+  "target_version": "0.3.3",
+  "upstream_url": "https://github.com/pbano-dev/offline-game-vault-gui"
+}

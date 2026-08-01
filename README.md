@@ -1,125 +1,141 @@
-# OfflineGameVault GUI
+# Offline Game Vault GUI 0.3.3
 
-OfflineGameVault GUI is a GTK4/libadwaita desktop application for browsing an
-OfflineGameVault collection and creating derived game materializations without
-modifying the immutable vault.
+GTK4/libadwaita controller for assembling and testing writable game variants
+from pieces already preserved inside an Offline Game Vault.
 
-## Capabilities
+The GUI never treats acceptance status as permission. If a capsule and the
+required preserved pieces exist, the user may request an experimental variant
+for:
 
-- Reads canonical capsules from an OfflineGameVault collection.
-- Supports candidate and verified profiles.
-- Lets the operator select a backend, profile, preserved runner, save set, and
-  local destination.
-- Supports multi-item save sets as one atomic selection.
-- Materializes through:
-  - Bottles;
-  - Direct-Wine;
-  - candidate Windows exports;
-  - base-only extraction.
-- Keeps the collection read-only while materialization workers are running.
-- Records selection and materialization receipts.
-- Checks critical collection seals before and after operations.
-- Never downloads runners or runtime components.
+- Bottles;
+- Direct-Wine;
+- UMU/Proton.
 
-## Current status
+Windows-native materialization is outside this release.
 
-This repository is an alpha-quality development snapshot.
+## Operating rule
 
-Verified acceptance evidence currently covers Bottles materialization for
-ELDEN RING NIGHTREIGN with both a selected multi-item save set and a clean
-no-save baseline. Direct-Wine remains a candidate workflow pending independent
-functional acceptance after the layout correction included in this release.
-Native Windows export has not been functionally tested.
+For every discovered game the GUI presents the three Linux backends. It then
+lists only runners returned by the core command:
 
-A successful structural materialization is not equivalent to verified gameplay.
-Acceptance does not transfer between runners, backends, save selections, or
-hosts.
-
-## Requirements
-
-Runtime requirements:
-
-- Python 3.11 or newer;
-- GTK4 Python bindings;
-- libadwaita Python bindings;
-- a compatible `offline-game-vault` checkout or installation;
-- Bubblewrap for materialization workers;
-- Bottles Flatpak for the Bottles backend;
-- preserved runner objects in the collection for Wine-based backends.
-
-The automated unit tests use the Python standard library and do not require a
-running GTK session.
-
-## Development setup
-
-Create an isolated Python environment:
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e .
+```text
+ogv list-preserved-runners
 ```
 
-GTK and libadwaita bindings are normally installed through the host package
-manager rather than PyPI.
+A runner is offered when the updated core reports structural compatibility
+with the selected backend. `verified`, `candidate`, `not_tested`,
+`experimental`, and `unavailable` remain evidence labels; none of them blocks
+materialization.
 
-Run the application:
+When the exact backend profile does not exist, core 0.11.3 synthesizes an
+experimental private profile from a compatible neutral Linux source. The
+source capsule is not rewritten.
 
-```bash
-./scripts/run-dev.sh
+## Materialize and test
+
+The selection flow is:
+
+1. game;
+2. backend;
+3. optional source-profile override;
+4. preserved runner;
+5. optional Direct-Wine state backup;
+6. output target;
+7. Materialize, Materialize & Play, Verify, Play, or Remove.
+
+Every successful materialization must contain these executable root-level
+operations:
+
+```text
+JUGAR.sh
+VERIFICAR.sh
+DESINSTALAR.sh
 ```
 
-Run the complete repository validation:
+`Materialize & Play` first asks the core to materialize and then invokes the
+generated `JUGAR.sh`. Play, Verify, and Remove likewise use the scripts
+published by that exact backend; the GUI does not reconstruct a second launch
+path.
 
-```bash
-./scripts/test.sh
+A successful materialization proves that the declared pieces assembled and
+verified. It does not prove gameplay, saves, DLC, video, audio, controller
+support, isolation, normal shutdown, or restoration.
+
+## Preserved pieces only
+
+The GUI does not:
+
+- download runners or runtimes;
+- search the Internet;
+- use a system Wine or Proton as a fallback;
+- reuse an arbitrary runner already installed in Bottles;
+- modify DRM, SteamStub, Steamworks, or anti-cheat components.
+
+Bottles, Direct-Wine, and UMU receive runner IDs from the Vault catalog.
+For UMU, the core automatically resolves a reusable shared object containing
+the preserved UMU, portable Python, and Steam Linux Runtime pieces. The GUI
+never asks the user to select another game's profile as a backend.
+
+## Core requirement
+
+A compatible `offline-game-vault` **0.11.3 or newer** is required. At startup
+the GUI verifies all commands needed for materialization, verification,
+execution, and removal.
+
+Resolution order:
+
+1. `OGV_EXECUTABLE`;
+2. `OGV_SOURCE_ROOT`;
+3. a sibling `offline-game-vault` checkout;
+4. `ogv` in `PATH`.
+
+A source checkout is preferred over an installed executable during development,
+preventing an old system-wide `ogv` from being selected silently. The GUI also
+provides **Select checkout…** for the current session.
+
+## Configuration
+
+Optional environment variables:
+
+```text
+OGV_COLLECTION_ROOT
+OGV_DESTINATION_PARENT
+OGV_EXECUTABLE
+OGV_SOURCE_ROOT
 ```
 
-Inspect host integration:
+For Bottles, the active managed directory is discovered through
+`bottles-cli info bottles-path` and displayed read-only. It cannot be replaced
+with an arbitrary destination. The selected runner is installed from its
+immutable Vault object by the core; large prematerialization trees are created
+inside the managed directory, never in the host `/tmp`.
+
+## Development
 
 ```bash
 ./scripts/check-host.sh
+./scripts/test.sh
+./scripts/run-dev.sh
 ```
 
-Create a clean source archive:
+The test suite includes command-contract tests and an end-to-end synthetic
+integration against core 0.11.3 for Bottles, Direct-Wine, and UMU.
 
-```bash
-./scripts/package-source.sh dist
-```
+## Safety boundary
 
-## Repository layout
+Only material failures block an operation:
 
-```text
-.github/    continuous-integration workflow
-data/       desktop integration files
-docs/       architecture, security, development, host, and acceptance documents
-scripts/    development, validation, packaging, and runtime helper scripts
-src/        Python package
-tests/      automated tests and synthetic fixtures
-```
+- missing or corrupt object;
+- missing or corrupt runner;
+- backend-incompatible runner;
+- absent reusable shared UMU runtime object;
+- unsafe path or symlink;
+- occupied target;
+- incompatible or missing core.
 
-## Safety and privacy
-
-The vault remains the source of truth. Materializations are derived outputs.
-The application does not modify DRM or anti-cheat components; it operates on
-capsules and objects already registered in the operator's private collection.
-
-Do not commit raw Wine, Bottles, DXVK, VKD3D, or build logs. They can contain
-absolute host paths, usernames, hostnames, UIDs, UUIDs, and session identifiers.
-Run `./scripts/audit-privacy.sh` before publishing a source archive.
-
-The test suite contains clearly synthetic host paths to exercise path
-sanitization. They do not identify a real user or host.
-
-## Documentation
-
-- `docs/ARCHITECTURE.md`
-- `docs/SECURITY_MODEL.md`
-- `docs/ACCEPTANCE.md`
-- `docs/DEVELOPMENT.md`
-- `docs/FEDORA_SILVERBLUE.md`
-- `RELEASE_NOTES.md`
+Receipts describe what was assembled and whether play completed. They do not
+authorize future operations or transfer functional acceptance.
 
 ## License
 
-Apache License 2.0. See `LICENSE`.
+Apache License 2.0.
