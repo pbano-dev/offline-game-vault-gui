@@ -2,91 +2,69 @@
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-OUT_DIR="${1:-$ROOT/dist}"
-VERSION="$(
-    python3 - "$ROOT/pyproject.toml" <<'PY'
+NAME="offline-game-vault-gui-state-free-components-0.4.1"
+OUT="${1:-$ROOT/dist}"
+STAGE="$(mktemp -d)"
+trap 'rm -rf -- "$STAGE"' EXIT
+
+cd -- "$ROOT"
+find src tests tools -type d -name __pycache__ -prune -exec rm -rf -- {} +
+find src -maxdepth 1 -type d -name "*.egg-info" -prune -exec rm -rf -- {} +
+./scripts/test.sh
+
+python3 tools/validate_repository.py --write-manifest
+./scripts/test.sh
+
+find src tests tools -type d -name __pycache__ -prune -exec rm -rf -- {} +
+find src -maxdepth 1 -type d -name "*.egg-info" -prune -exec rm -rf -- {} +
+mkdir -p -- "$OUT" "$STAGE/$NAME"
+cp -a \
+    .editorconfig .github .gitignore LICENSE MANIFEST.in README.md \
+    RELEASE_NOTES.md REPOSITORY_REPLACEMENT.md SOURCE_MANIFEST_SHA256.txt \
+    UPSTREAM_BASE.json VALIDATION_REPORT.md data docs pyproject.toml scripts \
+    src tests tools \
+    "$STAGE/$NAME/"
+
+python3 - "$STAGE" "$OUT/$NAME.zip" "$NAME" <<'PY'
 from pathlib import Path
-import re
 import sys
+import zipfile
 
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
-match = re.search(r'(?m)^version = "([^"]+)"$', text)
-if not match:
-    raise SystemExit("version not found")
-print(match.group(1))
-PY
-)"
-NAME="offline-game-vault-gui-$VERSION"
-OUT="$OUT_DIR/$NAME.tar.gz"
-
-mkdir -p -- "$OUT_DIR"
-
-python3 - "$ROOT" "$OUT" "$NAME" <<'PY'
-from __future__ import annotations
-
-import gzip
-import io
-import os
-import tarfile
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1]).resolve()
-output = Path(sys.argv[2]).resolve()
-prefix = sys.argv[3]
-
-excluded = {
-    ".git",
-    ".venv",
-    "__pycache__",
-    ".pytest_cache",
-    "build",
-    "dist",
-}
-files = [
-    path
-    for path in root.rglob("*")
-    if path.is_file()
-    and not path.is_symlink()
-    and not any(part in excluded for part in path.relative_to(root).parts)
-    and path != output
-]
-files.sort(key=lambda path: path.relative_to(root).as_posix())
-
-directories = {prefix}
-for path in files:
-    current = Path(prefix)
-    for part in path.relative_to(root).parts[:-1]:
-        current = current / part
-        directories.add(current.as_posix())
-
-with output.open("wb") as raw:
-    with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
-        with tarfile.open(
-            fileobj=gz,
-            mode="w",
-            format=tarfile.PAX_FORMAT,
-        ) as archive:
-            for directory in sorted(directories):
-                info = tarfile.TarInfo(directory)
-                info.type = tarfile.DIRTYPE
-                info.mode = 0o755
-                info.uid = info.gid = 0
-                info.uname = info.gname = ""
-                info.mtime = 0
-                archive.addfile(info)
-
-            for path in files:
-                relative = path.relative_to(root).as_posix()
-                data = path.read_bytes()
-                info = tarfile.TarInfo(f"{prefix}/{relative}")
-                info.type = tarfile.REGTYPE
-                info.size = len(data)
-                info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
-                info.uid = info.gid = 0
-                info.uname = info.gname = ""
-                info.mtime = 0
-                archive.addfile(info, io.BytesIO(data))
+stage = Path(sys.argv[1])
+output = Path(sys.argv[2])
+name = sys.argv[3]
+with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    for path in sorted((stage / name).rglob("*")):
+        if path.is_file():
+            archive.write(path, path.relative_to(stage).as_posix())
 PY
 
-sha256sum -- "$OUT"
+EXTRACT="$STAGE/extracted"
+mkdir -p -- "$EXTRACT"
+python3 - "$OUT/$NAME.zip" "$EXTRACT" <<'PY'
+from pathlib import Path
+import sys
+import zipfile
+archive = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+with zipfile.ZipFile(archive) as handle:
+    for info in handle.infolist():
+        member = Path(info.filename)
+        if member.is_absolute() or ".." in member.parts:
+            raise SystemExit(f"unsafe ZIP member: {info.filename}")
+        raw_mode = (info.external_attr >> 16)
+        kind = raw_mode & 0o170000
+        if kind == 0o120000:
+            raise SystemExit(f"symlink ZIP member: {info.filename}")
+        target = destination / member
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with handle.open(info) as source, target.open("wb") as output:
+            output.write(source.read())
+        target.chmod(raw_mode & 0o777 or 0o644)
+PY
+
+cd -- "$EXTRACT/$NAME"
+sha256sum -c SOURCE_MANIFEST_SHA256.txt
+./scripts/test.sh
+
+sha256sum -- "$OUT/$NAME.zip"

@@ -1,107 +1,81 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
 from typing import Any
 
 
-PREFERRED_COLLECTION_ROOT = Path(
-    "/run/media/system/Games/OfflineGameVault"
-)
-FALLBACK_COLLECTION_ROOT = Path.home() / "Games" / "OfflineGameVault"
-CONFIG_RELATIVE = Path("offline-game-vault-gui") / "config.json"
+APP_DIRECTORY = "offline-game-vault-gui"
 
 
-class ConfigurationError(RuntimeError):
-    pass
+def _xdg_path(variable: str, fallback: Path) -> Path:
+    raw = os.environ.get(variable)
+    return Path(raw).expanduser() if raw else fallback
 
 
-def _config_path() -> Path:
-    configured = os.environ.get("XDG_CONFIG_HOME")
-    root = Path(configured) if configured else Path.home() / ".config"
-    return root / CONFIG_RELATIVE
+@dataclass(slots=True)
+class Preferences:
+    collection_root: str = ""
+    destination_parent: str = ""
+    core_source_root: str = ""
 
-
-def _read_config() -> dict[str, Any]:
-    path = _config_path()
-    if not path.exists():
-        return {}
-    if path.is_symlink() or not path.is_file():
-        raise ConfigurationError(
-            "The configuration file is not a regular file"
+    @classmethod
+    def load(cls) -> "Preferences":
+        config_home = _xdg_path(
+            "XDG_CONFIG_HOME",
+            Path.home() / ".config",
         )
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ConfigurationError(
-            "The configuration file is not valid JSON"
-        ) from exc
-    if not isinstance(document, dict):
-        raise ConfigurationError(
-            "The configuration file does not contain an object"
+        path = config_home / APP_DIRECTORY / "preferences.json"
+        if not path.is_file() or path.is_symlink():
+            return cls.from_environment()
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return cls.from_environment()
+        if not isinstance(value, dict):
+            return cls.from_environment()
+        return cls(
+            collection_root=_string(value.get("collection_root"))
+            or os.environ.get("OGV_COLLECTION_ROOT", ""),
+            destination_parent=_string(value.get("destination_parent"))
+            or os.environ.get("OGV_DESTINATION_PARENT", ""),
+            core_source_root=_string(value.get("core_source_root"))
+            or os.environ.get("OGV_SOURCE_ROOT", ""),
         )
-    return document
+
+    @classmethod
+    def from_environment(cls) -> "Preferences":
+        return cls(
+            collection_root=os.environ.get("OGV_COLLECTION_ROOT", ""),
+            destination_parent=os.environ.get("OGV_DESTINATION_PARENT", ""),
+            core_source_root=os.environ.get("OGV_SOURCE_ROOT", ""),
+        )
+
+    def save(self) -> Path:
+        config_home = _xdg_path(
+            "XDG_CONFIG_HOME",
+            Path.home() / ".config",
+        )
+        directory = config_home / APP_DIRECTORY
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path = directory / "preferences.json"
+        document = {
+            "schema": 1,
+            "collection_root": self.collection_root,
+            "destination_parent": self.destination_parent,
+            "core_source_root": self.core_source_root,
+        }
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        temporary.replace(path)
+        return path
 
 
-def _path_value(document: dict[str, Any], key: str) -> Path | None:
-    value = document.get(key)
-    if value is None:
-        return None
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or "\x00" in value
-    ):
-        raise ConfigurationError(f"{key} is not a valid path")
-    return Path(value).expanduser()
-
-
-def _looks_like_collection(path: Path) -> bool:
-    return (
-        path.is_dir()
-        and not path.is_symlink()
-        and (path / "INDEX.json").is_file()
-        and (
-            path / "01_IMMUTABLE_VAULT" / "VAULT_INVENTORY.json"
-        ).is_file()
-        and (path / "02_CAPSULES").is_dir()
-        and (path / "03_PERSISTENT_STATE").is_dir()
-    )
-
-
-def resolve_collection_root() -> Path:
-    environment = os.environ.get("OGV_COLLECTION_ROOT")
-    if environment:
-        return Path(environment).expanduser()
-
-    configured = _path_value(_read_config(), "collection_root")
-    if configured is not None:
-        return configured
-
-    for candidate in (
-        PREFERRED_COLLECTION_ROOT,
-        FALLBACK_COLLECTION_ROOT,
-    ):
-        if _looks_like_collection(candidate):
-            return candidate
-    return PREFERRED_COLLECTION_ROOT
-
-
-def resolve_destination_parent() -> Path:
-    environment = os.environ.get("OGV_DESTINATION_PARENT")
-    if environment:
-        return Path(environment).expanduser()
-
-    configured = _path_value(_read_config(), "destination_parent")
-    if configured is not None:
-        return configured
-
-    configured_data = os.environ.get("XDG_DATA_HOME")
-    data_root = (
-        Path(configured_data).expanduser()
-        if configured_data
-        else Path.home() / ".local" / "share"
-    )
-    return data_root / "offline-game-vault-gui" / "materializations"
-
+def _string(value: Any) -> str:
+    return value if isinstance(value, str) else ""

@@ -1,45 +1,32 @@
-# Validation report for 0.3.3 source candidate
+# Validation report
 
-## Verified in the build environment
+Generated for GUI 0.4.1 on 2026-08-03.
 
-- 31 GUI unit tests pass.
-- All Python files parse with `ast`.
-- All shell scripts pass `bash -n`.
-- Whitespace and privacy audits pass.
-- Core capability probing requires Offline Game Vault 0.11.3 or newer.
-- The active GUI contains no **Preserved UMU backend** selector and emits no
-  `--umu-backend` argument.
-- Bottles, Direct-Wine, and UMU remain selectable for every game.
-- Only preserved runners returned by the core are shown.
+## Automated checks included in this source tree
 
-## Operational-script integration covered by tests
+- Python syntax compilation for `src`, `tests`, and `tools`;
+- unit tests for capsule discovery and rejection of retired profile fields;
+- synthetic-core tests for version probing and all required JSON commands;
+- exact core runner-identifier compatibility, including uppercase preserved
+  identifiers such as `Proton-9.0-203`;
+- exact argument tests for Bottles, Direct-Wine, and UMU composition;
+- post-materialization script path and symlink guards;
+- repository version consistency;
+- source-tree semantic scan;
+- privacy scan for common host-path leaks;
+- archive manifest verification;
+- 26 headless unit and contract tests;
+- local wheel build and isolated installation without dependency downloads;
+- clean ZIP extraction and a second full test run.
 
-- A materialization is recognized only when executable root-level
-  `JUGAR.sh`, `VERIFICAR.sh`, and `DESINSTALAR.sh` are present with its
-  backend receipt.
-- **Materialize & Play** materializes first and then invokes `JUGAR.sh`.
-- Play, Verify, and Remove invoke the generated backend-specific scripts
-  instead of reconstructing core commands in the GUI.
-- Direct-Wine, Bottles, and UMU all use the same script-dispatch path.
+## Boundaries
 
-## Core integration expected from 0.11.3
+The automated suite does not claim:
 
-- Bottles discovers its active managed directory through `bottles-cli`; the
-  GUI cannot redirect deployment to an arbitrary folder.
-- Bottles heavy staging and final publication occur inside that managed
-  directory, not in `/tmp`.
-- UMU reads the selected Proton runner's archived `toolmanifest.vdf`, resolves
-  the exact required runtime family, and excludes incomplete or mismatched
-  shared runtimes before copying a game.
-- UMU gameplay runs with `PrivateNetwork=yes` and
-  `UMU_RUNTIME_UPDATE=0`, so a missing runtime cannot be downloaded.
+- a GTK window was rendered on every target host;
+- a private Vault was materialized;
+- Bottles Flatpak was available;
+- a real game, save, DLC, or controller was tested;
+- network isolation or clean restoration was functionally accepted.
 
-## Pending on the target host
-
-- GTK4/libadwaita visual launch.
-- Real Bottles materialization and gameplay of The Sims 2.
-- Real UMU and Direct-Wine gameplay.
-- Save/load, DLC, video, audio, controller, normal shutdown, relocation, and
-  clean restoration.
-
-No functional acceptance is claimed for a commercial game.
+Those remain host and per-game acceptance tests.

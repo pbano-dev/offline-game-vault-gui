@@ -1,23 +1,23 @@
 {
-  "acceptance": "structurally-validated-not-functionally-accepted-on-private-games",
-  "architectural_scope": [
-    "user-requested-experimental-variants",
-    "all-games-bottles-direct-wine-umu",
-    "preserved-runners-only",
-    "core-0.11.3-capability-probe",
-    "canonical-operational-scripts-for-all-backends",
-    "materialize-and-play-through-generated-launcher",
-    "acceptance-is-descriptive-not-authorizing",
-    "automatic-shared-umu-runtime-resolution",
-    "destination-local-bottles-staging",
-    "offline-umu-runtime-validation-and-network-isolation"
-  ],
-  "base_branch": "main",
-  "base_commit": "dfb33dc40f432ec15b4c339bdb385feb618d372c",
-  "base_version": "0.2.6",
-  "project": "offline-game-vault-gui",
-  "schema": 0,
-  "status": "ready-to-commit-source-candidate",
-  "target_version": "0.3.3",
-  "upstream_url": "https://github.com/pbano-dev/offline-game-vault-gui"
+  "schema": 1,
+  "gui_source": {
+    "repository": "https://github.com/pbano-dev/offline-game-vault-gui",
+    "branch": "main",
+    "observed_version": "0.3.3"
+  },
+  "core_contract": {
+    "repository": "https://github.com/pbano-dev/offline-game-vault",
+    "branch": "refactor/state-free-components",
+    "minimum_version": "0.11.4",
+    "observed_commit": "620d412",
+    "required_commands": [
+      "discover-bottles-path",
+      "list-preserved-runners",
+      "list-shared-umu-runtimes",
+      "compose"
+    ]
+  },
+  "target_gui_version": "0.4.1",
+  "generated": "2026-08-03",
+  "architecture": "state-free-component-composition"
 }

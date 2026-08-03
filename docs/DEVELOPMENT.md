@@ -1,59 +1,38 @@
 # Development
 
-## Requirements
-
-- Python 3.11 or newer;
-- GTK4 and PyGObject;
-- libadwaita;
-- Bubblewrap and Flatpak where the selected backend requires them;
-- `offline-game-vault` 0.11.3 or newer;
-- an existing Offline Game Vault collection.
-
-## Source checkouts
-
-For development, keep the repositories as siblings:
+## Headless checks
 
 ```text
-<WORKSPACE>/
-├── offline-game-vault/
-└── offline-game-vault-gui/
+./scripts/test.sh
 ```
 
-The GUI prefers the sibling core over an older `ogv` in `PATH`. An explicit
-checkout may also be selected with:
+The test suite requires only Python 3.11 or newer. PyGObject is imported lazily
+so CI can validate the controller without a display server.
 
-```bash
-export OGV_SOURCE_ROOT=<WORKSPACE>/offline-game-vault
-```
+## Running the application
 
-## Run
-
-```bash
-export OGV_COLLECTION_ROOT=<VAULT>
+```text
+./scripts/check-host.sh
 ./scripts/run-dev.sh
 ```
 
-For Bottles:
+## Core checkout
 
-```bash
+For development against the unmerged core branch:
+
+```text
+export OGV_SOURCE_ROOT=/path/to/offline-game-vault
 ```
 
-## Validate
+The checkout must contain `src/offline_game_vault/cli.py` and report core
+version 0.11.4 or newer.
 
-```bash
-./scripts/check-host.sh
-./scripts/test.sh
-git diff --check
+## Release archive
+
+```text
+./scripts/package-source.sh
 ```
 
-The test suite must not access the Internet. Synthetic fixtures build tiny
-local game, runner, and UMU objects and exercise the same core command contract
-used by the GUI.
-
-## Packaging
-
-```bash
-./scripts/package-source.sh dist
-```
-
-Restore executable bits after transferring through ZIP before running scripts.
+The script regenerates `SOURCE_MANIFEST_SHA256.txt`, creates a ZIP with one
+top-level directory, extracts it again, verifies the manifest, and reruns the
+headless suite.

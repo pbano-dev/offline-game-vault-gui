@@ -1,274 +1,317 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
+from pathlib import Path
 import re
+import shlex
 import shutil
-import stat
 import subprocess
 import sys
-from pathlib import Path
-from typing import Iterable
+from typing import Any, Mapping, Sequence
 
-
-class CoreResolutionError(RuntimeError):
-    pass
-
-
-_REQUIRED_EXPERIMENTAL_COMMANDS = (
-    "discover-bottles-path",
-    "list-preserved-runners",
-    "list-shared-umu-runtimes",
-    "materialize-experimental",
-    "verify-playable",
-    "run-playable",
-    "remove-playable",
-    "verify-umu",
-    "run-umu",
-    "remove-umu",
-    "verify-bottles-deployment",
-    "run-bottles",
-    "remove-bottles-deployment",
+from .model import (
+    ComponentSet,
+    CompositionRequest,
+    CompositionResult,
+    RunnerRecord,
 )
 
 
+MINIMUM_CORE = (0, 11, 4)
+REQUIRED_COMMANDS = (
+    "discover-bottles-path",
+    "list-preserved-runners",
+    "list-shared-umu-runtimes",
+    "compose",
+)
+
+
+class CoreError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
-class CoreInfo:
-    command: tuple[str, ...]
+class CoreProbe:
     version: str
-    origin: str
-    commands: tuple[str, ...]
+    version_tuple: tuple[int, int, int]
+    description: str
 
 
-def _regular_executable(path: Path) -> Path:
-    try:
-        resolved = path.expanduser().resolve(strict=True)
-        metadata = resolved.lstat()
-    except OSError as exc:
-        raise CoreResolutionError(
-            f"Core executable cannot be resolved: {path}"
-        ) from exc
-    if (
-        not stat.S_ISREG(metadata.st_mode)
-        or stat.S_ISLNK(metadata.st_mode)
-        or not os.access(resolved, os.X_OK)
-    ):
-        raise CoreResolutionError(
-            f"Core executable is not a regular executable: {resolved}"
-        )
-    return resolved
+@dataclass(frozen=True, slots=True)
+class CoreClient:
+    command: tuple[str, ...]
+    environment: Mapping[str, str]
+    description: str
 
-
-def _valid_source(candidate: Path) -> Path | None:
-    try:
-        root = candidate.expanduser().resolve(strict=True)
-    except OSError:
-        return None
-    if (
-        root.is_dir()
-        and not root.is_symlink()
-        and (root / "pyproject.toml").is_file()
-        and (
-            root
-            / "src"
-            / "offline_game_vault"
-            / "cli.py"
-        ).is_file()
-    ):
-        return root
-    return None
-
-
-def _automatic_source_candidates() -> tuple[Path, ...]:
-    package_root = Path(__file__).resolve().parents[3]
-    return (
-        package_root.parent / "offline-game-vault",
-        Path.cwd().parent / "offline-game-vault",
-        Path.cwd() / "offline-game-vault",
-    )
-
-
-def resolve_core_source() -> Path | None:
-    configured = os.environ.get("OGV_SOURCE_ROOT")
-    if configured:
-        source = _valid_source(Path(configured))
-        if source is None:
-            raise CoreResolutionError(
-                "OGV_SOURCE_ROOT does not point to a compatible "
-                "offline-game-vault checkout"
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        executable: str | None = None,
+        source_root: Path | None = None,
+        repository_root: Path | None = None,
+    ) -> "CoreClient":
+        explicit_executable = executable or os.environ.get("OGV_EXECUTABLE")
+        if explicit_executable:
+            path = Path(explicit_executable).expanduser()
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or not os.access(path, os.X_OK)
+            ):
+                raise CoreError(
+                    "OGV_EXECUTABLE is not a regular executable file"
+                )
+            return cls(
+                command=(str(path.resolve()),),
+                environment=dict(os.environ),
+                description=f"executable:{path.resolve()}",
             )
-        return source
 
-    for candidate in _automatic_source_candidates():
-        source = _valid_source(candidate)
-        if source is not None:
-            return source
-    return None
+        explicit_source = source_root
+        if explicit_source is None:
+            raw_source = os.environ.get("OGV_SOURCE_ROOT")
+            explicit_source = Path(raw_source).expanduser() if raw_source else None
+        if explicit_source is not None:
+            return cls._from_source_root(explicit_source, explicit=True)
 
+        if repository_root is None:
+            repository_root = Path(__file__).resolve().parents[2]
+        sibling = repository_root.parent / "offline-game-vault"
+        if (sibling / "src/offline_game_vault/cli.py").is_file():
+            return cls._from_source_root(sibling, explicit=False)
 
-def _source_command(
-    source: Path,
-    environment: dict[str, str],
-) -> tuple[list[str], dict[str, str]]:
-    existing = environment.get("PYTHONPATH", "")
-    prefix = str(source / "src")
-    environment["PYTHONPATH"] = (
-        prefix if not existing else prefix + os.pathsep + existing
-    )
-    return [
-        sys.executable,
-        "-B",
-        "-m",
-        "offline_game_vault.cli",
-    ], environment
+        installed = shutil.which("ogv")
+        if installed:
+            return cls(
+                command=(installed,),
+                environment=dict(os.environ),
+                description=f"path:{installed}",
+            )
 
-
-def resolve_ogv_command() -> tuple[list[str], dict[str, str]]:
-    """Resolve one core implementation for every backend.
-
-    Explicit configuration is authoritative. A compatible source checkout is
-    preferred over an installed command so development runs cannot silently
-    pick an older system-wide ``ogv``.
-    """
-
-    environment = dict(os.environ)
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    environment["PYTHONUNBUFFERED"] = "1"
-
-    configured_executable = os.environ.get("OGV_EXECUTABLE")
-    if configured_executable:
-        executable = _regular_executable(Path(configured_executable))
-        return [str(executable)], environment
-
-    configured_source = os.environ.get("OGV_SOURCE_ROOT")
-    if configured_source:
-        source = resolve_core_source()
-        assert source is not None
-        return _source_command(source, environment)
-
-    for candidate in _automatic_source_candidates():
-        source = _valid_source(candidate)
-        if source is not None:
-            return _source_command(source, environment)
-
-    installed = shutil.which("ogv")
-    if installed:
-        return [str(_regular_executable(Path(installed)))], environment
-
-    raise CoreResolutionError(
-        "offline-game-vault was not found. Install core 0.11.3 or newer, "
-        "or set OGV_SOURCE_ROOT to its source checkout."
-    )
-
-
-def _run_probe(
-    command: Iterable[str],
-    environment: dict[str, str],
-    argument: str,
-) -> str:
-    process = subprocess.run(
-        [*command, argument],
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if process.returncode != 0:
-        detail = process.stderr.strip() or process.stdout.strip()
-        raise CoreResolutionError(
-            f"offline-game-vault probe failed: {detail[-2000:]}"
-        )
-    return process.stdout.strip()
-
-
-def _numeric_version(value: str) -> tuple[int, int, int] | None:
-    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value)
-    if match is None:
-        return None
-    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
-
-
-def inspect_core(
-    required_commands: Iterable[str] = _REQUIRED_EXPERIMENTAL_COMMANDS,
-) -> CoreInfo:
-    command, environment = resolve_ogv_command()
-    version_text = _run_probe(command, environment, "--version")
-    help_text = _run_probe(command, environment, "--help")
-
-    match = re.search(r"\bogv\s+([0-9][A-Za-z0-9._+-]*)\b", version_text)
-    version = match.group(1) if match else version_text
-    numeric_version = _numeric_version(version)
-    if numeric_version is None or numeric_version < (0, 11, 3):
-        raise CoreResolutionError(
-            "The resolved offline-game-vault core is too old. "
-            f"Found {version!r}; core 0.11.3 or newer is required "
-            "for canonical operational scripts and offline UMU validation."
+        raise CoreError(
+            "No compatible core was found. Set OGV_SOURCE_ROOT or "
+            "OGV_EXECUTABLE."
         )
 
-    missing = [
-        item
-        for item in required_commands
-        if not re.search(rf"(?<![A-Za-z0-9-]){re.escape(item)}(?![A-Za-z0-9-])", help_text)
-    ]
-    if missing:
-        raise CoreResolutionError(
-            "The resolved offline-game-vault core is incompatible. "
-            "Missing command(s): "
-            + ", ".join(missing)
-            + ". Install core 0.11.3 or newer, or point OGV_SOURCE_ROOT "
-            "to the updated checkout."
+    @classmethod
+    def _from_source_root(
+        cls,
+        source_root: Path,
+        *,
+        explicit: bool,
+    ) -> "CoreClient":
+        source_root = source_root.expanduser().resolve()
+        cli = source_root / "src/offline_game_vault/cli.py"
+        if cli.is_symlink() or not cli.is_file():
+            label = "OGV_SOURCE_ROOT" if explicit else "Sibling core checkout"
+            raise CoreError(f"{label} does not contain the core CLI")
+        environment = dict(os.environ)
+        pythonpath = str(source_root / "src")
+        current = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = (
+            pythonpath + os.pathsep + current if current else pythonpath
+        )
+        return cls(
+            command=(sys.executable, "-m", "offline_game_vault.cli"),
+            environment=environment,
+            description=f"source:{source_root}",
         )
 
-    configured_executable = os.environ.get("OGV_EXECUTABLE")
-    configured_source = os.environ.get("OGV_SOURCE_ROOT")
-    if configured_executable:
-        origin = f"executable:{command[0]}"
-    elif configured_source:
-        origin = f"source:{Path(configured_source).expanduser()}"
-    elif len(command) > 1:
-        source = resolve_core_source()
-        origin = f"source:{source}" if source is not None else "source"
-    else:
-        origin = f"PATH:{command[0]}"
-
-    return CoreInfo(
-        command=tuple(command),
-        version=version,
-        origin=origin,
-        commands=tuple(required_commands),
-    )
-
-
-def resolve_ogv_executable() -> Path:
-    """Return a real executable for legacy helpers that require one path."""
-
-    command, environment = resolve_ogv_command()
-    if len(command) == 1:
-        return Path(command[0])
-
-    cache_base = Path(
-        os.environ.get(
-            "XDG_CACHE_HOME",
-            str(Path.home() / ".cache"),
+    def probe(self) -> CoreProbe:
+        process = self._run(("--version",), timeout=20)
+        if process.returncode != 0:
+            detail = (process.stderr or process.stdout).strip()
+            raise CoreError(
+                f"Core version probe failed ({process.returncode}): {detail}"
+            )
+        text = (process.stdout or process.stderr).strip()
+        match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", text)
+        if match is None:
+            raise CoreError(f"Could not parse core version from: {text!r}")
+        version_tuple = tuple(int(item) for item in match.groups())
+        if version_tuple < MINIMUM_CORE:
+            minimum = ".".join(str(item) for item in MINIMUM_CORE)
+            raise CoreError(
+                f"Core {'.'.join(match.groups())} is too old; "
+                f"{minimum} or newer is required"
+            )
+        for command in REQUIRED_COMMANDS:
+            result = self._run((command, "--help"), timeout=20)
+            if result.returncode != 0:
+                raise CoreError(f"Core command is unavailable: {command}")
+        return CoreProbe(
+            version=".".join(match.groups()),
+            version_tuple=version_tuple,
+            description=self.description,
         )
-    )
-    wrapper_dir = cache_base / "offline-game-vault-gui"
-    wrapper_dir.mkdir(parents=True, exist_ok=True)
-    wrapper = wrapper_dir / "ogv-core-wrapper"
-    payload = (
-        "#!/bin/sh\n"
-        "set -eu\n"
-        "export PYTHONDONTWRITEBYTECODE=1\n"
-        "export PYTHONUNBUFFERED=1\n"
-        f"export PYTHONPATH={environment['PYTHONPATH']!r}\n"
-        f"exec {command[0]!r} -B -m offline_game_vault.cli \"$@\"\n"
-    )
-    if not wrapper.exists() or wrapper.read_text(encoding="utf-8") != payload:
-        temporary = wrapper.with_name(wrapper.name + ".tmp")
-        temporary.write_text(payload, encoding="utf-8", newline="\n")
-        temporary.chmod(0o700)
-        os.replace(temporary, wrapper)
-    return _regular_executable(wrapper)
+
+    def run_json(
+        self,
+        arguments: Sequence[str],
+        *,
+        timeout: int = 120,
+    ) -> dict[str, Any]:
+        process = self._run(tuple(arguments), timeout=timeout)
+        if process.returncode != 0:
+            detail = (process.stderr or process.stdout).strip()
+            if len(detail) > 4000:
+                detail = detail[:4000] + "…"
+            raise CoreError(
+                f"Core command failed ({process.returncode}): {detail}"
+            )
+        try:
+            value = json.loads(process.stdout)
+        except json.JSONDecodeError as exc:
+            raise CoreError(
+                "Core returned invalid JSON for "
+                + shlex.join([*self.command, *arguments])
+            ) from exc
+        if not isinstance(value, dict):
+            raise CoreError("Core JSON result is not an object")
+        return value
+
+    def list_runners(
+        self,
+        collection_root: Path,
+    ) -> tuple[tuple[RunnerRecord, ...], tuple[str, ...]]:
+        value = self.run_json(
+            (
+                "list-preserved-runners",
+                "--collection-root",
+                str(collection_root),
+                "--json",
+            )
+        )
+        if value.get("schema") != 0:
+            raise CoreError("Unsupported runner catalog schema")
+        raw_runners = value.get("runners")
+        raw_warnings = value.get("warnings")
+        if not isinstance(raw_runners, list) or not isinstance(
+            raw_warnings, list
+        ):
+            raise CoreError("Runner catalog fields are invalid")
+        try:
+            runners = tuple(
+                RunnerRecord.from_dict(item)
+                for item in raw_runners
+                if isinstance(item, dict)
+            )
+        except ValueError as exc:
+            raise CoreError(str(exc)) from exc
+        if len(runners) != len(raw_runners):
+            raise CoreError("Runner catalog contains a non-object entry")
+        if any(not isinstance(item, str) for item in raw_warnings):
+            raise CoreError("Runner warnings must be strings")
+        return runners, tuple(raw_warnings)
+
+    def list_component_sets(
+        self,
+        collection_root: Path,
+    ) -> tuple[ComponentSet, ...]:
+        value = self.run_json(
+            (
+                "list-shared-umu-runtimes",
+                "--collection-root",
+                str(collection_root),
+                "--json",
+            )
+        )
+        if value.get("schema") != 0:
+            raise CoreError("Unsupported UMU component-set schema")
+        raw = value.get("component_sets")
+        if not isinstance(raw, list):
+            raise CoreError("UMU component_sets is not an array")
+        try:
+            result = tuple(
+                ComponentSet.from_dict(item)
+                for item in raw
+                if isinstance(item, dict)
+            )
+        except ValueError as exc:
+            raise CoreError(str(exc)) from exc
+        if len(result) != len(raw):
+            raise CoreError("UMU component catalog contains a non-object entry")
+        return result
+
+    def discover_bottles_path(self) -> Path:
+        value = self.run_json(("discover-bottles-path", "--json"))
+        if value.get("schema") != 0:
+            raise CoreError("Unsupported Bottles discovery schema")
+        raw = value.get("bottles_path")
+        if not isinstance(raw, str) or not raw:
+            raise CoreError("Core did not return a Bottles path")
+        return Path(raw)
+
+    def compose(self, request: CompositionRequest) -> CompositionResult:
+        arguments: list[str] = [
+            "compose",
+            "--collection-root",
+            str(request.collection_root),
+            "--capsule",
+            str(request.capsule_path),
+            "--backend",
+            request.backend,
+            "--runner",
+            request.runner_id,
+        ]
+        if request.source_profile_id:
+            arguments.extend(("--source-profile", request.source_profile_id))
+        if request.backend == "bottles":
+            if not request.bottle_name:
+                raise CoreError("A Bottles derivative name is required")
+            if request.arguments:
+                raise CoreError(
+                    "Additional game arguments are not supported for Bottles"
+                )
+            if request.bottles_path is not None:
+                arguments.extend(
+                    ("--bottles-path", str(request.bottles_path))
+                )
+            arguments.extend(("--bottle-name", request.bottle_name))
+        else:
+            if request.destination is None:
+                raise CoreError(
+                    "A destination is required for Direct-Wine and UMU"
+                )
+            arguments.extend(("--destination", str(request.destination)))
+            if request.backend == "direct-wine" and request.state_backup:
+                arguments.extend(("--state-backup", str(request.state_backup)))
+        if request.play:
+            arguments.append("--play")
+        arguments.append("--json")
+        if request.arguments:
+            arguments.append("--")
+            arguments.extend(request.arguments)
+        value = self.run_json(arguments, timeout=3600)
+        try:
+            return CompositionResult.from_dict(value)
+        except ValueError as exc:
+            raise CoreError(str(exc)) from exc
+
+    def _run(
+        self,
+        arguments: Sequence[str],
+        *,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                [*self.command, *arguments],
+                env=dict(self.environment),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise CoreError("Core executable disappeared") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise CoreError("Core command timed out") from exc
+        except OSError as exc:
+            raise CoreError(f"Could not execute core: {exc}") from exc
