@@ -13,6 +13,23 @@ PORTABLE_ID = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*")
 SHA256 = re.compile(r"(?:sha256:)?[0-9a-f]{64}")
 
 
+def _path_has_symlink(root: Path, candidate: Path) -> bool:
+    """Return True when an existing component below root is a symlink."""
+
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+        if not current.exists():
+            break
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class SourceProfile:
     profile_id: str
@@ -177,6 +194,80 @@ class ComponentSet:
 
 
 @dataclass(frozen=True, slots=True)
+class SaveSetItemRecord:
+    state_id: str
+    declared_path: str
+    digest: str
+    size: int
+    payload_path: Path
+    entry_type: str
+    file_count: int
+    directory_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SaveSetRecord:
+    capsule_id: str
+    save_set_id: str
+    display_name: str
+    captured_at: str
+    captured_at_basis: str
+    aggregate_digest: str
+    size: int
+    manifest_path: Path
+    manifest_digest: str
+    items: tuple[SaveSetItemRecord, ...]
+    status: str
+    source: dict[str, Any] | None
+
+    @property
+    def label(self) -> str:
+        details = [self.save_set_id]
+        if self.captured_at:
+            details.append(self.captured_at)
+        return (
+            f"{self.display_name} ({', '.join(details)})"
+            if details
+            else self.display_name
+        )
+
+    def backup_path(self, collection_root: Path) -> Path | None:
+        """Resolve a portable directory declared by the save-set source.
+
+        Absolute paths and paths escaping the collection are rejected. The
+        returned directory is suitable for the core's Direct-Wine
+        ``--state-backup`` option.
+        """
+
+        if not self.source:
+            return None
+        root = Path(collection_root).expanduser()
+        if root.is_symlink() or not root.is_dir():
+            return None
+        resolved_root = root.resolve()
+        for key in ("state_backup", "accepted_state", "backup_path"):
+            value = self.source.get(key)
+            if not isinstance(value, str) or not value:
+                continue
+            relative = Path(value)
+            if relative.is_absolute() or ".." in relative.parts:
+                continue
+            candidate = resolved_root.joinpath(*relative.parts)
+            try:
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(resolved_root)
+            except (FileNotFoundError, OSError, ValueError):
+                continue
+            if (
+                _path_has_symlink(resolved_root, candidate)
+                or not resolved.is_dir()
+            ):
+                continue
+            return resolved
+        return None
+
+
+@dataclass(frozen=True, slots=True)
 class CompositionRequest:
     collection_root: Path
     capsule_path: Path
@@ -185,6 +276,7 @@ class CompositionRequest:
     source_profile_id: str | None = None
     destination: Path | None = None
     state_backup: Path | None = None
+    save_set_id: str | None = None
     bottles_path: Path | None = None
     bottle_name: str | None = None
     play: bool = False

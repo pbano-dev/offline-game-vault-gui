@@ -3,55 +3,87 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
-import json
-import os
 from pathlib import Path
-import re
-import stat
+import subprocess
 import sys
 import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "SOURCE_MANIFEST_SHA256.txt"
-EXCLUDED = {
+
+REQUIRED = {
+    ".github/workflows/validate.yml",
+    ".editorconfig",
+    ".gitignore",
+    "LICENSE",
+    "MANIFEST.in",
+    "README.md",
+    "RELEASE_NOTES.md",
+    "REPOSITORY_REPLACEMENT.md",
     "SOURCE_MANIFEST_SHA256.txt",
+    "UPSTREAM_BASE.json",
+    "VALIDATION_REPORT.md",
+    "pyproject.toml",
+    "requirements-lock.txt",
+    "requirements-ci.txt",
+    "data/io.github.pbano.OfflineGameVault.Gui.desktop",
+    "docs/ARCHITECTURE.md",
+    "docs/THIRD_PARTY.md",
+    "scripts/audit-privacy.sh",
+    "scripts/check-core-contract.sh",
+    "scripts/check-host.sh",
+    "scripts/package-source.sh",
+    "scripts/run-dev.sh",
+    "scripts/test.sh",
+    "src/offline_game_vault_gui/__init__.py",
+    "src/offline_game_vault_gui/app.py",
+    "src/offline_game_vault_gui/catalog.py",
+    "src/offline_game_vault_gui/config.py",
+    "src/offline_game_vault_gui/core.py",
+    "src/offline_game_vault_gui/model.py",
+    "src/offline_game_vault_gui/save_sets.py",
+    "src/offline_game_vault_gui/service.py",
+    "tests/test_catalog.py",
+    "tests/test_config.py",
+    "tests/test_core.py",
+    "tests/test_model.py",
+    "tests/test_qt_contract.py",
+    "tests/test_qt_smoke.py",
+    "tests/test_repository_contract.py",
+    "tests/test_save_sets.py",
+    "tests/test_service.py",
+    "tools/audit_privacy.py",
+    "tools/validate_repository.py",
 }
+
 EXCLUDED_PARTS = {
     ".git",
+    ".venv",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
+    ".ruff_cache",
     "build",
     "dist",
 }
-RETIRED_SOURCE_TERMS = (
-    "experimental_selection",
-    "experimental_service",
-    "profile_status",
-    "shared_runtime_id",
-)
-RETIRED_SOURCE_PATTERNS = (
-    re.compile(r'\bstatus\s*:\s*str\b'),
-    re.compile(r'\bacceptance_report\s*:\s*'),
-)
+
+EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".zip"}
 
 
 def source_files() -> list[Path]:
     result: list[Path] = []
-    for path in sorted(ROOT.rglob("*")):
-        if not path.is_file() or path.is_symlink():
+    for path in ROOT.rglob("*"):
+        if path == MANIFEST:
             continue
         relative = path.relative_to(ROOT)
-        if relative.as_posix() in EXCLUDED:
+        if any(part in EXCLUDED_PARTS for part in relative.parts):
             continue
-        if any(
-            part in EXCLUDED_PARTS or part.endswith(".egg-info")
-            for part in relative.parts
-        ):
-            continue
-        result.append(path)
-    return result
+        if path.is_symlink():
+            raise SystemExit(f"Repository contains a symlink: {relative}")
+        if path.is_file() and path.suffix not in EXCLUDED_SUFFIXES:
+            result.append(path)
+    return sorted(result, key=lambda item: item.relative_to(ROOT).as_posix())
 
 
 def digest(path: Path) -> str:
@@ -62,103 +94,125 @@ def digest(path: Path) -> str:
     return value.hexdigest()
 
 
-def write_manifest() -> None:
-    lines = [
-        f"{digest(path)}  {path.relative_to(ROOT).as_posix()}"
+def manifest_text() -> str:
+    return "".join(
+        f"{digest(path)}  {path.relative_to(ROOT).as_posix()}\n"
         for path in source_files()
-    ]
-    MANIFEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def verify_manifest() -> None:
-    if not MANIFEST.is_file() or MANIFEST.is_symlink():
-        raise SystemExit("SOURCE_MANIFEST_SHA256.txt is missing or linked")
-    expected: dict[str, str] = {}
-    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
-        if not line:
-            continue
-        checksum, separator, relative = line.partition("  ")
-        if not separator or not re.fullmatch(r"[0-9a-f]{64}", checksum):
-            raise SystemExit(f"Invalid manifest line: {line!r}")
-        if relative in expected:
-            raise SystemExit(f"Duplicate manifest path: {relative}")
-        expected[relative] = checksum
-    actual = {
-        path.relative_to(ROOT).as_posix(): digest(path)
-        for path in source_files()
-    }
-    if expected != actual:
-        missing = sorted(set(expected) - set(actual))
-        extra = sorted(set(actual) - set(expected))
-        changed = sorted(
-            key for key in set(expected) & set(actual)
-            if expected[key] != actual[key]
-        )
-        raise SystemExit(
-            "Manifest mismatch: "
-            f"missing={missing}, extra={extra}, changed={changed}"
-        )
-
-
-def validate_python() -> None:
-    for folder in ("src", "tests", "tools"):
-        for path in sorted((ROOT / folder).rglob("*.py")):
-            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-
-def validate_version() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    init = (ROOT / "src/offline_game_vault_gui/__init__.py").read_text(
-        encoding="utf-8"
     )
-    match = re.search(r'^__version__ = "([^"]+)"$', init, re.MULTILINE)
-    if match is None:
-        raise SystemExit("Package version is absent")
-    values = {
-        project["project"]["version"],
-        match.group(1),
-        "0.4.1",
-    }
-    if len(values) != 1:
-        raise SystemExit(f"Version contract differs: {sorted(values)}")
 
 
-def validate_semantics() -> None:
-    for path in sorted((ROOT / "src").rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        for term in RETIRED_SOURCE_TERMS:
-            if term in text:
-                raise SystemExit(f"Retired source term {term!r} in {path}")
-        for pattern in RETIRED_SOURCE_PATTERNS:
-            if pattern.search(text):
-                raise SystemExit(
-                    f"Retired source pattern {pattern.pattern!r} in {path}"
-                )
+def validate_required() -> None:
+    missing = sorted(
+        relative
+        for relative in REQUIRED
+        if not (ROOT / relative).is_file()
+    )
+    if missing:
+        raise SystemExit(
+            "Missing required files:\n" + "\n".join(missing)
+        )
 
 
-def validate_scripts() -> None:
+def validate_versions() -> None:
+    project = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    version = project["project"]["version"]
+    namespace: dict[str, object] = {}
+    exec(
+        compile(
+            (ROOT / "src/offline_game_vault_gui/__init__.py").read_bytes(),
+            "__init__.py",
+            "exec",
+        ),
+        namespace,
+    )
+    package_version = namespace.get("__version__")
+    if version != package_version:
+        raise SystemExit(
+            f"Version mismatch: pyproject={version}, package={package_version}"
+        )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    if version not in readme:
+        raise SystemExit("README does not state the package version")
+
+
+def imported_roots(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            roots.add(node.module.split(".", 1)[0])
+    return roots
+
+
+def validate_presentation_layer() -> None:
+    source = ROOT / "src/offline_game_vault_gui"
+    all_roots: set[str] = set()
+    for path in source.glob("*.py"):
+        all_roots.update(imported_roots(path))
+    retired = sorted({"gi", "Gtk", "Adw"}.intersection(all_roots))
+    if retired:
+        raise SystemExit(
+            "Retired GTK presentation imports remain: "
+            + ", ".join(retired)
+        )
+    app_roots = imported_roots(source / "app.py")
+    if "PySide6" not in app_roots:
+        raise SystemExit("app.py does not import PySide6")
+    app_text = (source / "app.py").read_text(encoding="utf-8")
+    for required in (
+        "QMainWindow",
+        "QComboBox",
+        "QFormLayout",
+        "QThreadPool",
+        "Preserved save set",
+    ):
+        if required not in app_text:
+            raise SystemExit(f"Qt frontend contract is missing: {required}")
+
+
+def validate_shell() -> None:
     for path in sorted((ROOT / "scripts").glob("*.sh")):
-        mode = path.stat().st_mode
-        if not mode & stat.S_IXUSR:
-            raise SystemExit(f"Script is not executable: {path}")
+        result = subprocess.run(
+            ["bash", "-n", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise SystemExit(
+                f"Shell syntax failed for {path.name}: {result.stderr}"
+            )
 
 
-def validate_json() -> None:
-    json.loads((ROOT / "UPSTREAM_BASE.json").read_text(encoding="utf-8"))
+def validate_manifest(write: bool) -> None:
+    expected = manifest_text()
+    if write:
+        MANIFEST.write_text(expected, encoding="utf-8")
+        return
+    if not MANIFEST.is_file():
+        raise SystemExit("SOURCE_MANIFEST_SHA256.txt is missing")
+    actual = MANIFEST.read_text(encoding="utf-8")
+    if actual != expected:
+        raise SystemExit(
+            "SOURCE_MANIFEST_SHA256.txt is stale; run "
+            "tools/validate_repository.py --write-manifest"
+        )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-manifest", action="store_true")
     args = parser.parse_args()
-    validate_python()
-    validate_version()
-    validate_semantics()
-    validate_scripts()
-    validate_json()
-    if args.write_manifest:
-        write_manifest()
-    verify_manifest()
+
+    validate_required()
+    validate_versions()
+    validate_presentation_layer()
+    validate_shell()
+    validate_manifest(args.write_manifest)
     print("Repository validation: passed")
     return 0
 

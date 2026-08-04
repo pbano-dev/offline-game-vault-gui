@@ -57,6 +57,10 @@ class CapsuleCatalog:
         capsule_id = value.get("capsule_id")
         if not isinstance(capsule_id, str) or not capsule_id:
             raise CatalogError(f"Capsule has no capsule_id: {path}")
+        if path.parent.name != capsule_id:
+            raise CatalogError(
+                f"Capsule ID does not match its directory: {path}"
+            )
         game = value.get("game")
         if not isinstance(game, dict):
             raise CatalogError(f"Capsule has no game object: {path}")

@@ -1,44 +1,51 @@
-# Validation report
+# Validation report — PySide6 replacement source tree
 
-Generated for GUI 0.4.1 on 2026-08-03.
+Generated on 2026-08-04.
 
-## Automated checks included in this source tree
+## Automated validation
 
-- Python syntax compilation for `src`, `tests`, and `tools`;
-- unit tests for capsule discovery and rejection of retired profile fields;
-- synthetic-core tests for version probing and all required JSON commands;
-- exact core runner-identifier compatibility, including uppercase preserved
-  identifiers such as `Proton-9.0-203`;
-- exact argument tests for Bottles, Direct-Wine, and UMU composition;
-- post-materialization script path and symlink guards;
-- repository version consistency;
-- source-tree semantic scan;
-- privacy scan for common host-path leaks;
-- archive manifest verification;
-- 26 headless unit and contract tests;
-- local wheel build and isolated installation without dependency downloads;
-- clean ZIP extraction and a second full test run.
+The delivered ZIP is checked for:
 
-## Optional real-core contract check
+- Python syntax across `src`, `tests`, and `tools`;
+- non-Qt unit tests for catalog, core command construction, service safety,
+  save-set scanning, configuration, and data models;
+- absence of GTK/libadwaita imports;
+- presence of PySide6 Qt Widgets imports;
+- exact source-manifest verification;
+- absence of generated Python artifacts;
+- public privacy patterns and symlinks;
+- executable shell-script syntax;
+- clean extraction followed by a second validation pass.
 
-Run:
+## Contract basis
+
+The preserved core interface remains:
 
 ```text
-./scripts/check-core-contract.sh ../offline-game-vault
+discover-bottles-path
+list-preserved-runners
+list-shared-umu-runtimes
+compose
 ```
 
-This probes an actual core checkout, verifies the minimum version, and checks
-that every required public command is available. It does not materialize a
-private Vault or claim per-game functional acceptance.
+Post-materialization operations use only:
 
-## Boundaries
+```text
+JUGAR.sh
+VERIFICAR.sh
+DESINSTALAR.sh
+```
 
-The automated suite does not claim:
+## Not validated here
 
-- a GTK window was rendered on every target host;
-- a private Vault was materialized;
-- Bottles Flatpak was available;
-- a real game, save, DLC, or controller was tested;
-- network isolation or clean restoration was functionally accepted.
+The build environment does not contain PySide6 or a display server. Therefore
+this report does not claim:
 
-Those remain host and per-game acceptance tests.
+- actual Qt widget rendering;
+- interaction under Plasma, GNOME, X11, or Wayland;
+- Bottles discovery on the user's host;
+- materialization against a private Vault;
+- save loading inside a game;
+- DLC, video, audio, input, isolation, shutdown, or restoration acceptance.
+
+Those remain host-level acceptance tests.

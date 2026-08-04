@@ -1,5 +1,11 @@
+include LICENSE
 include README.md
 include RELEASE_NOTES.md
-include LICENSE
-recursive-include data *
+include VALIDATION_REPORT.md
+include requirements-lock.txt
+include SOURCE_MANIFEST_SHA256.txt
+recursive-include data *.desktop
 recursive-include docs *.md
+recursive-include scripts *.sh
+include REPOSITORY_REPLACEMENT.md
+include requirements-ci.txt

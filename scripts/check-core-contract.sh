@@ -13,7 +13,7 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
 export OGV_SOURCE_ROOT="$CORE_ROOT"
 
-python3 -B - <<'PY_CORE_PROBE'
+python3 -B - <<'PY'
 from pathlib import Path
 import os
 
@@ -25,4 +25,4 @@ client = CoreClient.resolve(
 probe = client.probe()
 
 print(f"Real core contract: compatible ({probe.version})")
-PY_CORE_PROBE
+PY

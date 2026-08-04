@@ -1,9 +1,9 @@
 [Desktop Entry]
+Type=Application
 Name=Offline Game Vault
-Comment=Compose writable game derivatives from preserved Vault components
+Comment=Materialize and operate writable derivatives from preserved Vault objects
 Exec=ogv-gui
 Icon=applications-games
 Terminal=false
-Type=Application
 Categories=Game;Utility;
 StartupNotify=true

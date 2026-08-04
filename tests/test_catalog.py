@@ -9,74 +9,72 @@ from offline_game_vault_gui.catalog import CapsuleCatalog, CatalogError
 
 
 class CapsuleCatalogTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
-        self.collection = self.root / "vault"
-        self.capsules = self.collection / "02_CAPSULES"
-        self.capsules.mkdir(parents=True)
-
-    def tearDown(self) -> None:
-        self.temporary.cleanup()
-
-    def _write_capsule(self, profile: dict[str, object]) -> Path:
-        directory = self.capsules / "game"
-        directory.mkdir()
-        path = directory / "capsule.json"
-        path.write_text(
+    def _collection(
+        self,
+        *,
+        title: str = "A Very Long Example Game Title",
+        extra_profile: dict[str, object] | None = None,
+    ) -> tuple[tempfile.TemporaryDirectory[str], Path]:
+        temporary = tempfile.TemporaryDirectory()
+        root = Path(temporary.name)
+        capsule = root / "02_CAPSULES/example-game/capsule.json"
+        capsule.parent.mkdir(parents=True)
+        profile: dict[str, object] = {
+            "id": "linux-source",
+            "platform": "windows",
+            "adapter": "direct-wine",
+            "playable": {"backend": "direct-wine"},
+        }
+        if extra_profile:
+            profile.update(extra_profile)
+        capsule.write_text(
             json.dumps(
                 {
-                    "schema": 0,
-                    "capsule_id": "game",
-                    "game": {"title": "Game"},
+                    "capsule_id": "example-game",
+                    "game": {"title": title},
                     "profiles": [profile],
                 }
             ),
             encoding="utf-8",
         )
-        return path
+        return temporary, root
 
-    def test_discovers_source_layout_without_maturity_state(self) -> None:
-        path = self._write_capsule(
-            {
-                "id": "linux-source",
-                "platform": "linux",
-                "adapter": "wine",
-                "playable": {"backend": "wine"},
-            }
-        )
-        records = CapsuleCatalog().scan(self.collection)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].capsule_path, path.resolve())
-        self.assertEqual(records[0].source_profiles[0].profile_id, "linux-source")
-        self.assertEqual(
-            records[0].source_profiles[0].playable_backend,
-            "wine",
-        )
-        self.assertFalse(
-            hasattr(records[0].source_profiles[0], "status")
-        )
+    def test_discovers_game_title_and_source_layout(self) -> None:
+        temporary, root = self._collection()
+        self.addCleanup(temporary.cleanup)
+        games = CapsuleCatalog().scan(root)
+        self.assertEqual(len(games), 1)
+        self.assertEqual(games[0].title, "A Very Long Example Game Title")
+        self.assertEqual(games[0].capsule_id, "example-game")
+        self.assertEqual(games[0].source_profiles[0].profile_id, "linux-source")
 
     def test_rejects_retired_profile_fields(self) -> None:
-        self._write_capsule(
-            {
-                "id": "legacy",
-                "platform": "linux",
-                "adapter": "wine",
-                "status": "candidate",
-            }
+        temporary, root = self._collection(
+            extra_profile={"maturity": "verified"}
         )
+        self.addCleanup(temporary.cleanup)
         with self.assertRaisesRegex(CatalogError, "retired fields"):
-            CapsuleCatalog().scan(self.collection)
+            CapsuleCatalog().scan(root)
+
+    def test_rejects_capsule_directory_mismatch(self) -> None:
+        temporary, root = self._collection()
+        self.addCleanup(temporary.cleanup)
+        path = root / "02_CAPSULES/example-game/capsule.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["capsule_id"] = "other"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(CatalogError, "does not match"):
+            CapsuleCatalog().scan(root)
 
     def test_rejects_capsule_symlink(self) -> None:
-        target = self.root / "outside.json"
-        target.write_text("{}", encoding="utf-8")
-        directory = self.capsules / "linked"
-        directory.mkdir()
-        (directory / "capsule.json").symlink_to(target)
+        temporary, root = self._collection()
+        self.addCleanup(temporary.cleanup)
+        capsule = root / "02_CAPSULES/example-game/capsule.json"
+        target = capsule.with_name("real.json")
+        capsule.rename(target)
+        capsule.symlink_to(target.name)
         with self.assertRaises(CatalogError):
-            CapsuleCatalog().scan(self.collection)
+            CapsuleCatalog().scan(root)
 
 
 if __name__ == "__main__":

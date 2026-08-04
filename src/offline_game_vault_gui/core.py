@@ -69,20 +69,17 @@ class CoreClient:
                 environment=dict(os.environ),
                 description=f"executable:{path.resolve()}",
             )
-
         explicit_source = source_root
         if explicit_source is None:
             raw_source = os.environ.get("OGV_SOURCE_ROOT")
             explicit_source = Path(raw_source).expanduser() if raw_source else None
         if explicit_source is not None:
             return cls._from_source_root(explicit_source, explicit=True)
-
         if repository_root is None:
             repository_root = Path(__file__).resolve().parents[2]
         sibling = repository_root.parent / "offline-game-vault"
         if (sibling / "src/offline_game_vault/cli.py").is_file():
             return cls._from_source_root(sibling, explicit=False)
-
         installed = shutil.which("ogv")
         if installed:
             return cls(
@@ -90,7 +87,6 @@ class CoreClient:
                 environment=dict(os.environ),
                 description=f"path:{installed}",
             )
-
         raise CoreError(
             "No compatible core was found. Set OGV_SOURCE_ROOT or "
             "OGV_EXECUTABLE."

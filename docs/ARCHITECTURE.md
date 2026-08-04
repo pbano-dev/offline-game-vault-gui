@@ -1,52 +1,43 @@
-# Architecture
+# Qt frontend architecture
 
 ## Boundary
 
-The GUI is a controller. The core remains authoritative for inventory,
-integrity, compatibility, extraction, materialization, runtime isolation, and
-receipts.
-
 ```text
-GTK view
-  -> CompositionService
-    -> CapsuleCatalog
-    -> CoreClient
-      -> offline-game-vault 0.11.4
+app.py (PySide6/Qt Widgets)
+    -> service.py
+    -> core.py
+    -> offline-game-vault CLI 0.11.4+
 ```
 
-## State-free model
+`app.py` owns presentation, dialogs, background workers, and temporary UI
+selection. `service.py` owns local safety checks and generated-operation
+execution. `core.py` owns the public subprocess/JSON contract. The core
+repository owns composition policy.
 
-`GameRecord` contains source profiles parsed from the capsule. A
-`SourceProfile` records only an identifier, platform, adapter, and playable
-backend. It has no maturity, acceptance, publication, or ownership state.
+## UI model
 
-`RunnerRecord` is created only from the core runner catalog.
-`ComponentSet` is created only from the core UMU diagnostic catalog. The GUI
-does not infer either from capsule labels or host installations.
+Qt Widgets are used directly. No QML, Qt Quick, Kirigami, GTK, libadwaita,
+PyGObject, or GLib compatibility layer is retained.
 
-## Composition
+`RichComboBox` and `RichItemDelegate` render complete wrapped labels. Domain
+objects are stored as Qt item payloads; the GUI does not derive technical IDs
+from display strings.
 
-A `CompositionRequest` names:
+## Save selection
 
-- the collection;
-- source capsule;
-- requested backend;
-- preserved runner;
-- optional source-profile override;
-- destination or Bottles derivative name;
-- optional Direct-Wine state backup;
-- optional game arguments for Direct-Wine or UMU.
+`save_sets.py` reads optional private collection metadata. A selected save set
+is converted to the existing Direct-Wine `state_backup` request field only
+after containment, type, and symlink checks.
 
-The core synthesizes the operational profile and leaves the source capsule
-unchanged.
+The save-set ID is provenance for the local GUI receipt. It is not a core
+authorization field and does not alter the source capsule.
 
-## Post-materialization operations
+## Threading
 
-The GUI records the destination returned by the core. Play, Verify, and Remove
-resolve one of the three generated root scripts and reject symlinks,
-non-regular files, non-executable files, and paths outside that exact
-materialization.
+Core subprocess operations run through `QThreadPool` and `QRunnable`.
+Presentation changes return through Qt signals to the GUI thread.
 
-The GUI does not duplicate backend launch logic.
+## Styling
 
-Backend-specific removal confirmations or export options are passed as argument arrays to the generated `DESINSTALAR.sh`; the GUI does not interpret them as acceptance state.
+The host Qt style and palette are authoritative. Local QSS is opt-in and never
+stored in the Vault.

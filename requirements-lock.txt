@@ -1,0 +1,3 @@
+# Reproducible reference environment used for this source release.
+# Archive the matching wheels separately for a truly offline installation.
+PySide6==6.11.1

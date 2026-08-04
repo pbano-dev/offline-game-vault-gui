@@ -9,6 +9,7 @@ import subprocess
 import time
 from typing import Any, Sequence
 
+from . import __version__
 from .catalog import CapsuleCatalog
 from .core import CoreClient
 from .model import (
@@ -18,7 +19,9 @@ from .model import (
     CompositionResult,
     GameRecord,
     RunnerRecord,
+    SaveSetRecord,
 )
+from .save_sets import scan_save_sets
 
 
 class ServiceError(RuntimeError):
@@ -26,7 +29,6 @@ class ServiceError(RuntimeError):
 
 
 PORTABLE_BOTTLE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-
 
 OPERATIONS = {
     "play": "JUGAR.sh",
@@ -56,6 +58,14 @@ class CompositionService:
         games = self.catalog.scan(root)
         runners, warnings = self.core.list_runners(root)
         return games, runners, warnings
+
+    def save_sets(
+        self,
+        collection_root: Path,
+        capsule_id: str,
+    ) -> tuple[tuple[SaveSetRecord, ...], tuple[str, ...]]:
+        root = self._regular_collection(collection_root)
+        return scan_save_sets(root, capsule_id)
 
     def compatible_runners(
         self,
@@ -133,9 +143,11 @@ class CompositionService:
             raise ServiceError("Unsupported backend")
         if not request.runner_id:
             raise ServiceError("A preserved runner is required")
+
         destination: Path | None = None
         bottles_path = request.bottles_path
         bottle_name = request.bottle_name
+
         if request.backend == "bottles":
             if (
                 not bottle_name
@@ -168,14 +180,26 @@ class CompositionService:
                 raise ServiceError(
                     "Writable derivatives must remain outside the collection"
                 )
+
         state_backup = request.state_backup
+        save_set_id = request.save_set_id
         if state_backup is not None:
+            if request.backend != "direct-wine":
+                raise ServiceError(
+                    "Persistent-state restoration is exposed only for "
+                    "Direct-Wine by the current core compose contract"
+                )
             state_backup = state_backup.expanduser()
             if state_backup.is_symlink() or not state_backup.is_dir():
                 raise ServiceError(
                     "The Direct-Wine state backup is not a regular directory"
                 )
             state_backup = state_backup.resolve()
+        elif save_set_id is not None:
+            raise ServiceError(
+                "The selected save set has no usable state backup directory"
+            )
+
         return CompositionRequest(
             collection_root=root,
             capsule_path=capsule,
@@ -184,6 +208,7 @@ class CompositionService:
             source_profile_id=request.source_profile_id,
             destination=destination,
             state_backup=state_backup,
+            save_set_id=save_set_id,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=request.play,
@@ -260,7 +285,7 @@ class CompositionService:
         }
         document: dict[str, Any] = {
             "schema": 1,
-            "gui_version": "0.4.1",
+            "gui_version": __version__,
             "capsule_id": result.capsule_id,
             "backend": result.backend,
             "runner_id": result.runner_id,
@@ -274,6 +299,8 @@ class CompositionService:
                 "source_profile_id": request.source_profile_id,
                 "bottle_name": request.bottle_name,
                 "argument_count": len(request.arguments),
+                "save_set_id": request.save_set_id,
+                "state_backup_selected": request.state_backup is not None,
             },
         }
         path.write_text(
