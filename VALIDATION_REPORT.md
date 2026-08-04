@@ -19,6 +19,18 @@ Generated for GUI 0.4.1 on 2026-08-03.
 - local wheel build and isolated installation without dependency downloads;
 - clean ZIP extraction and a second full test run.
 
+## Optional real-core contract check
+
+Run:
+
+```text
+./scripts/check-core-contract.sh ../offline-game-vault
+```
+
+This probes an actual core checkout, verifies the minimum version, and checks
+that every required public command is available. It does not materialize a
+private Vault or claim per-game functional acceptance.
+
 ## Boundaries
 
 The automated suite does not claim:

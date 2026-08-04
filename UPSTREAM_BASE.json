@@ -1,5 +1,7 @@
 {
   "schema": 1,
+  "record_type": "historical-migration-base",
+  "purpose": "Records the source and core state used to generate GUI 0.4.1. It is not the current runtime compatibility declaration.",
   "gui_source": {
     "repository": "https://github.com/pbano-dev/offline-game-vault-gui",
     "branch": "main",
