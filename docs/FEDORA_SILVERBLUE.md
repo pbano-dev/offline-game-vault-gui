@@ -1,12 +1,17 @@
 # Fedora Silverblue
 
-Install GTK4/libadwaita Python bindings and Bubblewrap through the host. Keep
-the core and GUI source checkouts outside Flatpak sandboxes unless explicitly
-testing a packaged application.
+Install the host GUI dependencies:
 
-For a source checkout, set `OGV_SOURCE_ROOT` when the core is not installed as
-`ogv`. Configure `OGV_COLLECTION_ROOT` only when collection auto-discovery is
-not appropriate.
+```text
+sudo rpm-ostree install python3-gobject gtk4 libadwaita
+```
 
-Bottles remains a separate Flatpak integration and requires
-the directory reported by `bottles-cli info bottles-path`.
+Reboot after layering packages.
+
+Bottles is expected as the Flatpak application
+`com.usebottles.bottles`. The managed Bottles directory is discovered through
+the core and displayed read-only. The GUI does not replace it with an arbitrary
+path.
+
+For source development, set `OGV_SOURCE_ROOT` to the core checkout containing
+the `refactor/state-free-components` work until that branch is merged.

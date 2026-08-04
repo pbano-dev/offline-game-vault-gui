@@ -1,54 +1,23 @@
-# Acceptance boundary
+# Acceptance boundaries
 
-## Structural result
+A successful GUI operation can establish that:
 
-A successful GUI materialization establishes only that:
+- the selected core accepted the request;
+- required preserved objects were found and verified;
+- a writable derivative was materialized;
+- generated structural verification succeeded;
+- an optional generated launcher returned the result recorded by the core.
 
-- the selected capsule was readable;
-- preserved objects and runner matched the Vault records;
-- path and archive checks passed;
-- the requested backend derivative was assembled;
-- its backend receipt was written.
+It does not establish:
 
-It does not establish that the game is functionally accepted.
-
-## Experimental state
-
-Every user-requested combination is recorded as experimental and starts with:
-
-```text
-acceptance_inherited: false
-```
-
-This remains true even when the source profile or runner participated in a
-different verified combination.
-
-## Functional acceptance
-
-Acceptance belongs to the exact combination of:
-
-```text
-capsule
-source profile/layout
-backend
-runner or Proton
-shared UMU runtime identity where applicable
-state selection
-host
-```
-
-A real acceptance run should cover, as applicable:
-
-- canonical launch;
-- Steam not running;
-- exterior network blocked;
-- existing save loaded;
-- DLC recognized and real DLC content loaded;
-- video and audio;
-- controller and hotplug;
+- successful gameplay;
+- save compatibility;
+- owned DLC loading;
+- video, audio, or controller behavior;
+- offline isolation;
 - normal shutdown;
-- relocation;
-- clean restoration.
+- restoration on a clean host.
 
-The GUI allows testing before acceptance because testing is how acceptance
-evidence is created.
+Acceptance evidence belongs to a separate historical record for an exact game,
+component set, host contract, and test date. It does not authorize or prohibit
+future compositions.

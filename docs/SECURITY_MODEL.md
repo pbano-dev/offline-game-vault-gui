@@ -1,44 +1,41 @@
 # Security model
 
-## Immutable input
+## Trusted authority
 
-The GUI treats the Vault as read-only input. The core verifies canonical
-objects and materializes outside the Vault or into the explicitly selected
-managed Bottles directory.
+The selected `offline-game-vault` core is authoritative. The GUI requires
+version 0.11.4 or newer and probes each command it depends on.
 
-## No component acquisition
+## Path rules
 
-The GUI performs no network lookup or download. It only lists runners verified by core 0.11.3 from the current Vault. Shared UMU runtimes are resolved internally from objects marked shared. No system Wine,
-system Proton, or arbitrary installed Bottles runner is used as fallback.
+- Collection and capsule paths must resolve beneath the selected collection.
+- Direct-Wine and UMU destinations must not exist.
+- A destination must not be inside the collection.
+- Generated operation scripts must be regular executable files, not symlinks,
+  and must resolve directly beneath the materialization root.
+- The GUI never follows a receipt-supplied operation path.
 
-## Safe paths
+## Process rules
 
-The GUI rejects:
+Commands are executed as argument arrays without a shell. Output is captured as
+UTF-8 with replacement for invalid bytes. Error messages are bounded before
+display.
 
-- a destination parent inside the Vault;
-- symlinked destination or Bottles directories;
-- an existing unrecognized target for materialization;
-- missing capsule files;
-- backend-incompatible runner selections.
+## Network and downloads
 
-The core remains responsible for archive traversal, special files, symlink
-escape, object hashes, and publication semantics.
+The GUI does not download anything and has no networking code. It does not
+substitute a host Wine, Proton, UMU, Python, or Steam Runtime object.
 
-## Acceptance is not access control
+Network containment during UMU execution is a core/runtime responsibility and
+must be verified separately on the target host.
 
-`verified`, `candidate`, `not_tested`, `experimental`, and `unavailable` are
-evidence states. They are not security permissions. Blocking a test because it
-has not already been tested creates a circular workflow and is intentionally
-avoided.
+## Privacy
 
-## Removal
+Preferences contain only user-selected paths and UI values. Local operation
+receipts are sanitized summaries and remain outside the Vault. Raw command
+logs are not persisted automatically.
 
-Removal is destructive to mutable derivatives. The GUI requires explicit
-confirmation that state was preserved and, for Bottles, that related processes
-were stopped. The immutable Vault is never removed.
+Play and Remove arguments are parsed with `shlex` and passed as process arguments without a shell. Verify accepts no extra arguments.
 
-## Logs and privacy
+## Local receipts
 
-Operation logs can contain host paths. Do not archive raw GUI, Wine, Proton,
-UMU, Bottles, DXVK, or VKD3D logs in a public package. Run the repository
-privacy audit before release.
+Local receipts keep only stable component identity facts from the core result. They do not persist raw backend result objects, command output, or argument values. Absolute target paths remain local private state and must be sanitized before publication.

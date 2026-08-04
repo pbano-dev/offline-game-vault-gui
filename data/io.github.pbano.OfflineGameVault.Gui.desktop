@@ -1,10 +1,9 @@
 [Desktop Entry]
-Type=Application
-Name=OfflineGameVault GUI
-Comment=Materialize preserved Windows games without modifying the Vault
+Name=Offline Game Vault
+Comment=Compose writable game derivatives from preserved Vault components
 Exec=ogv-gui
 Icon=applications-games
 Terminal=false
+Type=Application
 Categories=Game;Utility;
-Keywords=Wine;Proton;UMU;Bottles;Preservation;
 StartupNotify=true

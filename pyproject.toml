@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "offline-game-vault-gui"
-version = "0.3.3"
-description = "GTK4 GUI for user-requested Offline Game Vault variants using Bottles, Direct-Wine, and UMU"
+version = "0.4.1"
+description = "GTK4 GUI for state-free Offline Game Vault component compositions"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 [project.scripts]
-ogv-gui = "offline_game_vault_gui.integrated_app:main"
+ogv-gui = "offline_game_vault_gui.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -28,3 +28,6 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/applications" = ["data/io.github.pbano.OfflineGameVault.Gui.desktop"]
