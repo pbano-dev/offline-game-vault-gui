@@ -1,3 +1,13 @@
+# Historical repository replacement instructions for GUI 0.4.1
+
+**Status:** completed migration record.
+
+This document records how GUI 0.4.1 replaced the former 0.3.3 source tree. It
+is retained as provenance and is not a current installation, update, or
+compatibility procedure.
+
+---
+
 # Repository replacement instructions
 
 This ZIP represents the complete 0.4.1 source tree.

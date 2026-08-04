@@ -4,8 +4,9 @@ GTK4/libadwaita controller for requesting writable Bottles, Direct-Wine, and
 UMU/Proton compositions from pieces already preserved in an Offline Game
 Vault.
 
-This tree targets `offline-game-vault` **0.11.4** on
-`refactor/state-free-components`.
+This tree requires `offline-game-vault` **0.11.4 or newer**. Compatibility
+is defined by the public core command contract, not by a development branch
+name.
 
 ## Operating model
 
@@ -84,6 +85,7 @@ After reboot, run from a source checkout:
 ```text
 ./scripts/check-host.sh
 ./scripts/test.sh
+./scripts/check-core-contract.sh ../offline-game-vault
 ./scripts/run-dev.sh
 ```
 
@@ -103,12 +105,11 @@ user's XDG config/state directories. Receipts omit raw core result objects,
 command output, and argument values. They remain private local files and must
 be sanitized before publication. The GUI does not write policy into the Vault.
 
-## Replacing the 0.3.3 source tree
+## Migration history
 
-This archive is a complete repository source tree, not an overlay. Replace the
-old branch contents while preserving `.git`. Do not leave the retired
-`experimental_*`, `neutral_profiles`, runner-override, or old UMU bridge
-modules in the branch. See `REPOSITORY_REPLACEMENT.md`.
+The procedure used to replace the former GUI 0.3.3 tree is retained only as
+historical provenance in `REPOSITORY_REPLACEMENT.md`. It is not a current
+installation, update, or compatibility procedure.
 
 ## Validation
 
