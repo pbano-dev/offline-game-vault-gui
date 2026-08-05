@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
@@ -15,6 +15,10 @@ def _xdg_path(variable: str, fallback: Path) -> Path:
     return Path(raw).expanduser() if raw else fallback
 
 
+def _string(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
 @dataclass(slots=True)
 class Preferences:
     collection_root: str = ""
@@ -23,12 +27,8 @@ class Preferences:
 
     @classmethod
     def load(cls) -> "Preferences":
-        config_home = _xdg_path(
-            "XDG_CONFIG_HOME",
-            Path.home() / ".config",
-        )
-        path = config_home / APP_DIRECTORY / "preferences.json"
-        if not path.is_file() or path.is_symlink():
+        path = cls.path()
+        if path.is_symlink() or not path.is_file():
             return cls.from_environment()
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
@@ -53,29 +53,29 @@ class Preferences:
             core_source_root=os.environ.get("OGV_SOURCE_ROOT", ""),
         )
 
-    def save(self) -> Path:
+    @classmethod
+    def path(cls) -> Path:
         config_home = _xdg_path(
             "XDG_CONFIG_HOME",
             Path.home() / ".config",
         )
-        directory = config_home / APP_DIRECTORY
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path = directory / "preferences.json"
-        document = {
-            "schema": 1,
-            "collection_root": self.collection_root,
-            "destination_parent": self.destination_parent,
-            "core_source_root": self.core_source_root,
-        }
-        temporary = path.with_suffix(".tmp")
+        return config_home / APP_DIRECTORY / "preferences.json"
+
+    def save(self) -> None:
+        path = self.path()
+        if path.exists() and path.is_symlink():
+            raise OSError("Preferences path is a symbolic link")
+        path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
         temporary.write_text(
-            json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+            json.dumps(
+                asdict(self),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
         temporary.chmod(0o600)
-        temporary.replace(path)
-        return path
-
-
-def _string(value: Any) -> str:
-    return value if isinstance(value, str) else ""
+        os.replace(temporary, path)

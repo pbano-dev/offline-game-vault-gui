@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Offline Game Vault
-Comment=Compose writable game derivatives from preserved Vault components
-Exec=ogv-gui
-Icon=applications-games
-Terminal=false
 Type=Application
-Categories=Game;Utility;
+Name=Offline Game Vault
+Comment=Compose writable offline-game derivatives from a preserved collection
+Exec=ogv-gui
+Terminal=false
+Categories=Game;Utility;Qt;
 StartupNotify=true
+X-GNOME-UsesNotifications=false

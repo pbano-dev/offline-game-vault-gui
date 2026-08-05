@@ -1,128 +1,178 @@
-# Offline Game Vault GUI 0.4.1
+# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a4
 
-GTK4/libadwaita controller for requesting writable Bottles, Direct-Wine, and
-UMU/Proton compositions from pieces already preserved in an Offline Game
-Vault.
+Complete PySide6/Qt Widgets frontend for
+[`offline-game-vault`](https://github.com/pbano-dev/offline-game-vault)
+0.12.2 or newer.
 
-This tree requires `offline-game-vault` **0.11.4 or newer**. Compatibility
-is defined by the public core command contract, not by a development branch
-name.
+This source tree replaces the GTK4/libadwaita presentation layer. It does not
+replace or duplicate core preservation policy.
 
-## Operating model
+## Authority boundary
 
-The Vault stores pieces and facts, not opinions about maturity.
+The core remains authoritative for:
 
-- Profiles are source-layout recipes.
-- Acceptance reports are separate historical evidence.
-- Wine/Proton runners, the UMU/Python backend, and Steam Linux Runtime objects
-  are reusable global components.
-- The core resolves concrete objects and blocks only on technical facts:
-  missing or corrupt objects, unsafe archives or paths, incompatible
-  dependencies, occupied targets, and an incompatible core.
-- A successful materialization proves structural assembly and verification.
-  It does not prove gameplay, save loading, DLC, controller behavior,
-  isolation, normal shutdown, or clean restoration.
+- immutable-object verification;
+- runner and UMU component selection;
+- Bottles, Direct-Wine, and UMU composition;
+- backend state-root resolution;
+- verified persistent-state restoration;
+- pre-restore snapshots and restoration evidence;
+- atomic publication;
+- generated `JUGAR.sh`, `VERIFICAR.sh`, and `DESINSTALAR.sh` operations.
 
-The GUI does not expose `verified`, `candidate`, `not_tested`, `experimental`,
-`accepted`, or similar labels as profile or component maturity.
-
-## Supported operations
-
-The GUI can:
-
-1. discover capsules from `<COLLECTION>/02_CAPSULES/*/capsule.json`;
-2. list preserved runners through the core;
-3. show resolved UMU component sets for diagnostics;
-4. request Bottles, Direct-Wine, or UMU compositions;
-5. invoke the generated root operations, including backend-specific Remove arguments:
-   - `JUGAR.sh`;
-   - `VERIFICAR.sh`;
-   - `DESINSTALAR.sh`.
-
-It never reconstructs a second launch command and never downloads a runner,
-runtime, or backend.
-
-## Core discovery
-
-Resolution order:
-
-1. `OGV_EXECUTABLE`;
-2. `OGV_SOURCE_ROOT`;
-3. a sibling `offline-game-vault` checkout;
-4. `ogv` in `PATH`.
-
-Runner identifiers are consumed exactly as returned by the core. The GUI
-accepts the core portable identifier contract, including case-sensitive IDs
-such as `Proton-9.0-203`; it does not normalize or rewrite them.
-
-The selected core must be version 0.11.4 or newer and must provide:
+The GUI is a thin subprocess/JSON client:
 
 ```text
-discover-bottles-path
-list-preserved-runners
-list-shared-umu-runtimes
-compose
+capsule.json
+    -> catalog.py
+    -> service.py
+    -> core.py
+    -> offline-game-vault CLI
 ```
 
-## Host requirements
+The GUI never derives prefix paths, save paths, AppIDs, DLC ownership, runner
+fallbacks, or backend launch commands.
 
-Runtime GUI:
+## Core 0.12 state contract
 
-- Python 3.11 or newer;
-- GTK 4;
-- libadwaita 1;
-- PyGObject;
-- a compatible Offline Game Vault core.
-
-On Fedora Silverblue:
+One public option is used for every backend:
 
 ```text
-sudo rpm-ostree install python3-gobject gtk4 libadwaita
+compose \
+  --backend bottles|direct-wine|umu \
+  --state-backup <VERIFIED_BACKUP>
 ```
 
-After reboot, run from a source checkout:
+The GUI can obtain that directory from either:
+
+- a registered private save set under
+  `03_PERSISTENT_STATE/<capsule_id>/save-sets/index.json`; or
+- a manually selected directory.
+
+The source-layout selector defaults to **Auto (recommended)**. In this mode
+the GUI omits `--source-profile` and the core chooses the best technically
+compatible source contract for the selected backend. Profile names such as
+`linux-bottles-flatpak` are not compatibility guarantees; the referenced host
+contract is authoritative.
+
+The state selector lists only backups that contain `state-backup.json` and
+pass the core's `verify-state-backup` command. Save-set metadata can provide a
+display name and provenance, but it is not itself a restorable backup.
+
+Every verified receipt is presented by its `created_at` timestamp, newest
+first. The timestamp is converted to the host's local timezone for display.
+The technical backup ID remains visible as secondary information. Backups
+whose verified payload contains save-kind items are distinguished from
+identity-only state and empty state, so a valid identity snapshot is not
+misrepresented as a saved game.
+
+The same selector remains visible for Bottles, Direct-Wine, and UMU. The GUI
+does not decide whether a capsule requires state. When no backup is selected,
+the core accepts or rejects the request according to the operational capsule.
+
+Only collection-contained, relative save-set source paths are resolved.
+Absolute paths, path escapes, symlink traversal, missing directories, and
+non-directories are rejected.
+
+## Functional scope
+
+The frontend provides:
+
+- collection-root and default-target selection;
+- explicit core-checkout selection and compatibility probing;
+- game, backend, source-profile, and preserved-runner selection;
+- backend-neutral preserved save-set and backup selection;
+- Bottles managed-path discovery;
+- Direct-Wine and UMU target selection;
+- UMU component-set diagnostics;
+- additional Direct-Wine/UMU play arguments;
+- generated Remove arguments;
+- Materialize, Materialize & Play, Verify, Play, and Remove;
+- private minimized operation receipts;
+- background workers so long core operations do not block the interface;
+- wrapped game titles and secondary identifiers without ellipsis.
+
+## Installation
+
+Networked development installation:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+ogv-gui
+```
+
+Reference dependency:
 
 ```text
+PySide6 6.11.1
+```
+
+The project accepts PySide6 6.8 through the current Qt 6 series. For a
+reproducible offline package, archive the exact platform wheels, hashes, and
+license notices separately. This source ZIP contains no third-party wheels.
+
+## Development and validation
+
+```bash
 ./scripts/check-host.sh
 ./scripts/test.sh
 ./scripts/check-core-contract.sh ../offline-game-vault
+./scripts/audit-privacy.sh
 ./scripts/run-dev.sh
 ```
 
-## Environment
+`test.sh` always runs headless domain and contract tests. When PySide6 is
+installed, it also runs the offscreen Qt smoke test.
 
-Optional variables:
+## Appearance
 
-```text
-OGV_COLLECTION_ROOT
-OGV_DESTINATION_PARENT
-OGV_EXECUTABLE
-OGV_SOURCE_ROOT
-```
+The active Qt platform style and palette are authoritative. The application
+does not force Fusion, Adwaita, Breeze, dark mode, or custom colors.
 
-The GUI stores local preferences and a minimized operation receipt below the
-user's XDG config/state directories. Receipts omit raw core result objects,
-command output, and argument values. They remain private local files and must
-be sanitized before publication. The GUI does not write policy into the Vault.
-
-## Migration history
-
-The procedure used to replace the former GUI 0.3.3 tree is retained only as
-historical provenance in `REPOSITORY_REPLACEMENT.md`. It is not a current
-installation, update, or compatibility procedure.
-
-## Validation
-
-Run:
+Optional local overrides:
 
 ```text
-./scripts/test.sh
+OGV_QT_STYLE=<Qt style name>
+OGV_QT_STYLESHEET=<regular .qss file>
 ```
 
-The suite is headless and uses a synthetic core executable to test command
-construction and JSON contracts. GTK import and a private Vault are separate
-host validation steps.
+These affect presentation only and are never written to the Vault.
+
+## Safety boundaries
+
+The GUI does not:
+
+- download runners, runtimes, or game data;
+- fall back to system Wine or Proton;
+- mutate immutable Vault objects;
+- reconstruct launch commands after materialization;
+- treat acceptance evidence as authorization;
+- apply Steamless, Steamworks emulation, anti-cheat changes, or DRM changes;
+- claim that materialization proves gameplay acceptance.
+
+A successful composition demonstrates assembly and structural verification.
+It does not prove save loading, DLC, video, audio, controller support, network
+isolation, normal shutdown, relocation, or clean restoration. Those remain
+per-title acceptance tests.
+
+## Privacy
+
+Preferences are stored under the XDG configuration directory. Minimized local
+operation receipts are stored under the XDG state directory.
+
+Receipts record identifiers and boolean selection facts. They do not record:
+
+- the state-backup path;
+- the materialization destination;
+- raw core JSON;
+- command output;
+- usernames, hostnames, UIDs, UUIDs, or private collection inventories.
 
 ## License
 
-Apache License 2.0.
+Application source: Apache License 2.0.
+
+PySide6/Qt for Python is a separate third-party dependency distributed under
+its own licensing terms. See `docs/THIRD_PARTY.md`.

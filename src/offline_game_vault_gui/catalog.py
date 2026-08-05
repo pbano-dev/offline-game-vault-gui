@@ -20,21 +20,29 @@ RETIRED_PROFILE_FIELDS = {
 
 
 class CapsuleCatalog:
+    """Read operational capsules without adding authorization semantics."""
+
     def scan(self, collection_root: Path) -> tuple[GameRecord, ...]:
         collection_root = Path(collection_root).expanduser()
         if collection_root.is_symlink() or not collection_root.is_dir():
             raise CatalogError("The collection must be a regular directory")
-        capsules_root = collection_root / "02_CAPSULES"
+
+        root = collection_root.resolve()
+        capsules_root = root / "02_CAPSULES"
         if capsules_root.is_symlink() or not capsules_root.is_dir():
             raise CatalogError("The collection has no regular 02_CAPSULES")
-        records: list[GameRecord] = []
-        for path in sorted(capsules_root.glob("*/capsule.json")):
-            records.append(self._load_capsule(collection_root, path))
+
+        records = [
+            self._load_capsule(root, path)
+            for path in sorted(capsules_root.glob("*/capsule.json"))
+        ]
         if not records:
             raise CatalogError("No capsule.json files were discovered")
-        ids = [item.capsule_id for item in records]
-        if len(ids) != len(set(ids)):
+
+        identifiers = [item.capsule_id for item in records]
+        if len(identifiers) != len(set(identifiers)):
             raise CatalogError("Duplicate capsule IDs were discovered")
+
         return tuple(sorted(records, key=lambda item: item.title.casefold()))
 
     def _load_capsule(
@@ -42,73 +50,83 @@ class CapsuleCatalog:
         collection_root: Path,
         path: Path,
     ) -> GameRecord:
-        resolved_collection = collection_root.resolve()
         if path.is_symlink() or not path.is_file():
             raise CatalogError(f"Capsule is not a regular file: {path}")
-        resolved = path.resolve()
-        if not resolved.is_relative_to(resolved_collection):
-            raise CatalogError(f"Capsule escapes collection: {path}")
+
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(collection_root)
+        except (OSError, ValueError) as exc:
+            raise CatalogError(f"Capsule escapes the collection: {path}") from exc
+
+        try:
+            value = json.loads(resolved.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise CatalogError(f"Invalid capsule JSON: {path}: {exc}") from exc
         if not isinstance(value, dict):
             raise CatalogError(f"Capsule root is not an object: {path}")
+
         capsule_id = value.get("capsule_id")
+        game = value.get("game")
         if not isinstance(capsule_id, str) or not capsule_id:
             raise CatalogError(f"Capsule has no capsule_id: {path}")
-        game = value.get("game")
         if not isinstance(game, dict):
             raise CatalogError(f"Capsule has no game object: {path}")
         title = game.get("title")
         if not isinstance(title, str) or not title:
-            title = capsule_id
-        profiles = value.get("profiles")
-        if not isinstance(profiles, list) or not profiles:
+            raise CatalogError(f"Capsule has no game.title: {path}")
+
+        profiles_raw = value.get("profiles")
+        if not isinstance(profiles_raw, list) or not profiles_raw:
             raise CatalogError(f"Capsule has no profiles: {path}")
-        parsed: list[SourceProfile] = []
-        for raw in profiles:
-            if not isinstance(raw, dict):
-                raise CatalogError(f"Capsule profile is not an object: {path}")
-            retired = sorted(RETIRED_PROFILE_FIELDS.intersection(raw))
-            if retired:
-                raise CatalogError(
-                    f"{path}: profile contains retired fields: "
-                    + ", ".join(retired)
-                )
-            parsed.append(self._parse_profile(path, raw))
+
+        profiles: list[SourceProfile] = []
+        for profile in profiles_raw:
+            profiles.append(self._profile(profile, path))
+
+        identifiers = [item.profile_id for item in profiles]
+        if len(identifiers) != len(set(identifiers)):
+            raise CatalogError(f"Capsule contains duplicate profile IDs: {path}")
+
         return GameRecord(
             capsule_id=capsule_id,
             title=title,
             capsule_path=resolved,
-            source_profiles=tuple(parsed),
+            source_profiles=tuple(profiles),
         )
 
-    def _parse_profile(
-        self,
-        path: Path,
-        value: dict[str, Any],
-    ) -> SourceProfile:
+    def _profile(self, value: Any, path: Path) -> SourceProfile:
+        if not isinstance(value, dict):
+            raise CatalogError(f"Capsule profile is not an object: {path}")
+        retired = RETIRED_PROFILE_FIELDS.intersection(value)
+        if retired:
+            raise CatalogError(
+                f"Profile contains retired state fields: {sorted(retired)}"
+            )
+
         profile_id = value.get("id")
-        if not isinstance(profile_id, str) or not profile_id:
-            raise CatalogError(f"Profile has no ID: {path}")
         platform = value.get("platform")
         adapter = value.get("adapter")
-        if not isinstance(platform, str) or not platform:
-            raise CatalogError(f"{profile_id}: platform is absent")
-        if not isinstance(adapter, str) or not adapter:
-            raise CatalogError(f"{profile_id}: adapter is absent")
         playable = value.get("playable")
         playable_backend: str | None = None
-        if playable is not None:
-            if not isinstance(playable, dict):
-                raise CatalogError(f"{profile_id}: playable is not an object")
+
+        if not isinstance(profile_id, str) or not profile_id:
+            raise CatalogError(f"Profile has no id: {path}")
+        if not isinstance(platform, str) or not platform:
+            raise CatalogError(f"Profile has no platform: {path}")
+        if not isinstance(adapter, str) or not adapter:
+            raise CatalogError(f"Profile has no adapter: {path}")
+
+        if isinstance(playable, dict):
             backend = playable.get("backend")
             if backend is not None and not isinstance(backend, str):
                 raise CatalogError(
-                    f"{profile_id}: playable.backend is not a string"
+                    f"Profile playable.backend is not a string: {path}"
                 )
             playable_backend = backend
+        elif playable is not None:
+            raise CatalogError(f"Profile playable is not an object: {path}")
+
         return SourceProfile(
             profile_id=profile_id,
             platform=platform,

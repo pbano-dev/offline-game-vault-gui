@@ -1,52 +1,63 @@
-# Architecture
+# Qt frontend architecture
 
 ## Boundary
 
-The GUI is a controller. The core remains authoritative for inventory,
-integrity, compatibility, extraction, materialization, runtime isolation, and
-receipts.
-
 ```text
-GTK view
-  -> CompositionService
-    -> CapsuleCatalog
-    -> CoreClient
-      -> offline-game-vault 0.11.4
+app.py (PySide6/Qt Widgets)
+    -> service.py
+    -> core.py
+    -> offline-game-vault CLI 0.12.0+
 ```
 
-## State-free model
+`app.py` owns presentation, dialogs, background workers, and temporary UI
+selection. `service.py` owns local path safety, private minimized receipts, and
+generated-operation execution. `core.py` owns the strict public
+subprocess/JSON client. The core repository owns preservation and restoration
+policy.
 
-`GameRecord` contains source profiles parsed from the capsule. A
-`SourceProfile` records only an identifier, platform, adapter, and playable
-backend. It has no maturity, acceptance, publication, or ownership state.
+## Presentation
 
-`RunnerRecord` is created only from the core runner catalog.
-`ComponentSet` is created only from the core UMU diagnostic catalog. The GUI
-does not infer either from capsule labels or host installations.
+Qt Widgets are used directly. No QML, Qt Quick, Kirigami, GTK, libadwaita,
+PyGObject, or GLib compatibility layer is retained.
 
-## Composition
+`RichComboBox` and `RichItemDelegate` render full wrapped labels. Domain
+objects are stored as item payloads; technical identifiers are never parsed
+back from display text.
 
-A `CompositionRequest` names:
+## Backend-neutral state
 
-- the collection;
-- source capsule;
-- requested backend;
-- preserved runner;
-- optional source-profile override;
-- destination or Bottles derivative name;
-- optional Direct-Wine state backup;
-- optional game arguments for Direct-Wine or UMU.
+`save_sets.py` reads optional private collection metadata. A selected save set
+is converted to the common `state_backup` request field only after containment,
+type, existence, and symlink checks.
 
-The core synthesizes the operational profile and leaves the source capsule
-unchanged.
+The same field is supported for Bottles, Direct-Wine, and UMU. The GUI does not
+derive a prefix or save root. Core 0.12 verifies the backup, resolves the
+effective backend state root, restores in staging, records evidence, and
+publishes atomically.
 
-## Post-materialization operations
+The save-set ID is local provenance. It does not modify the operational capsule
+or authorize restoration.
 
-The GUI records the destination returned by the core. Play, Verify, and Remove
-resolve one of the three generated root scripts and reject symlinks,
-non-regular files, non-executable files, and paths outside that exact
-materialization.
+## Threading
 
-The GUI does not duplicate backend launch logic.
+Core subprocess operations run through `QThreadPool` and `QRunnable`.
+Presentation updates return through Qt signals to the GUI thread.
 
-Backend-specific removal confirmations or export options are passed as argument arrays to the generated `DESINSTALAR.sh`; the GUI does not interpret them as acceptance state.
+## Generated operations
+
+After composition, the GUI invokes only regular executable files generated in
+the materialization root:
+
+```text
+JUGAR.sh
+VERIFICAR.sh
+DESINSTALAR.sh
+```
+
+Symlinks, missing files, non-regular files, non-executable files, and resolved
+paths outside the materialization root are rejected.
+
+## Persistence
+
+Preferences use XDG config. Local minimized receipts use XDG state. Neither is
+part of the immutable Vault.

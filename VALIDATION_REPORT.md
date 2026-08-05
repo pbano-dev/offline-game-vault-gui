@@ -1,44 +1,51 @@
-# Validation report
+# Validation report — PySide6 source tree 0.5.0a4
 
-Generated for GUI 0.4.1 on 2026-08-03.
+Generated: 2026-08-05.
 
-## Automated checks included in this source tree
+## Automated in the delivered source
 
-- Python syntax compilation for `src`, `tests`, and `tools`;
-- unit tests for capsule discovery and rejection of retired profile fields;
-- synthetic-core tests for version probing and all required JSON commands;
-- exact core runner-identifier compatibility, including uppercase preserved
-  identifiers such as `Proton-9.0-203`;
-- exact argument tests for Bottles, Direct-Wine, and UMU composition;
-- post-materialization script path and symlink guards;
-- repository version consistency;
-- source-tree semantic scan;
-- privacy scan for common host-path leaks;
-- archive manifest verification;
-- 26 headless unit and contract tests;
-- local wheel build and isolated installation without dependency downloads;
-- clean ZIP extraction and a second full test run.
+- Python syntax across `src`, `tests`, and `tools`;
+- headless domain tests;
+- exact backend-neutral compose command tests;
+- source-profile Auto/default contract tests;
+- recursive state-backup discovery and core verification tests;
+- receipt-date parsing and newest-first ordering tests;
+- save-bearing versus identity-only state classification tests;
+- service path and generated-operation safety tests;
+- save-set containment and symlink tests;
+- catalog state-free profile tests;
+- dynamic version consistency;
+- static PySide6/Qt and no-GTK contract tests;
+- shell-script syntax;
+- source SHA-256 manifest generation and verification;
+- privacy-pattern and symlink audit.
 
-## Optional real-core contract check
-
-Run:
+## Core contract basis
 
 ```text
-./scripts/check-core-contract.sh ../offline-game-vault
+offline-game-vault >= 0.12.2
+compose --backend bottles|direct-wine|umu
+        --state-backup <backup>
 ```
 
-This probes an actual core checkout, verifies the minimum version, and checks
-that every required public command is available. It does not materialize a
-private Vault or claim per-game functional acceptance.
+The core remains authoritative for backup verification, historical-definition
+compatibility, backend state-root resolution, pre-restore snapshotting,
+restoration, evidence, and atomic publication.
 
-## Boundaries
+## Verified outside the synthetic GUI tests
 
-The automated suite does not claim:
+- A historical Sekiro backup materialized through UMU with core 0.12.2 and
+  loaded its preserved save.
 
-- a GTK window was rendered on every target host;
-- a private Vault was materialized;
-- Bottles Flatpak was available;
-- a real game, save, DLC, or controller was tested;
-- network isolation or clean restoration was functionally accepted.
+## Not validated by this source-tree run
 
-Those remain host and per-game acceptance tests.
+- actual rendering in every supported graphical session;
+- operation against other private collections;
+- save loading for other titles;
+- DLC content loading;
+- video, audio, controller, or hotplug behavior;
+- external network isolation;
+- normal shutdown;
+- relocation and clean restoration.
+
+These limitations must not be converted into guarantees.

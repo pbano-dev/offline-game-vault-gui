@@ -7,189 +7,458 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from offline_game_vault_gui.catalog import CapsuleCatalog
-from offline_game_vault_gui.core import CoreClient
-from offline_game_vault_gui.model import CompositionRequest
-from offline_game_vault_gui.service import CompositionService, ServiceError
+from offline_game_vault_gui.model import (
+    CompositionRequest,
+    CompositionResult,
+    GameRecord,
+    SourceProfile,
+    StateBackupRecord,
+)
+from offline_game_vault_gui.service import (
+    CompositionService,
+    ServiceError,
+)
+
+
+class FakeCore:
+    def list_runners(self, collection_root: Path):
+        del collection_root
+        return (), ()
+
+    def list_component_sets(self, collection_root: Path):
+        del collection_root
+        return ()
+
+    def discover_bottles_path(self) -> Path:
+        raise AssertionError(
+            "not used in this synthetic service test"
+        )
+
+    def verify_state_backup(
+        self,
+        *,
+        capsule_path: Path,
+        backup: Path,
+    ) -> StateBackupRecord:
+        del capsule_path
+        return StateBackupRecord(
+            backup_id="verified-backup",
+            path=backup,
+            backup_kind="accepted",
+            item_count=1,
+            present_count=1,
+            missing_count=0,
+            total_bytes=12,
+        )
+
+    def compose(
+        self,
+        request: CompositionRequest,
+    ) -> CompositionResult:
+        if request.backend == "bottles":
+            assert request.bottles_path is not None
+            assert request.bottle_name is not None
+            destination = (
+                request.bottles_path
+                / request.bottle_name
+            )
+        else:
+            assert request.destination is not None
+            destination = request.destination
+
+        destination.mkdir()
+        for name in (
+            "JUGAR.sh",
+            "VERIFICAR.sh",
+            "DESINSTALAR.sh",
+        ):
+            script = destination / name
+            script.write_text(
+                "#!/bin/sh\nexit 0\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+
+        return CompositionResult(
+            capsule_id="example-game",
+            backend=request.backend,
+            runner_id=request.runner_id,
+            profile_id="derived",
+            destination=destination,
+            materialized=True,
+            played=request.play,
+            play_complete=True if request.play else None,
+            backend_result={},
+        )
 
 
 class CompositionServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.collection = self.root / "vault"
-        capsule_directory = self.collection / "02_CAPSULES/game"
-        capsule_directory.mkdir(parents=True)
-        self.capsule = capsule_directory / "capsule.json"
-        self.capsule.write_text(
+        self.collection = self.root / "collection"
+        capsule = (
+            self.collection
+            / "02_CAPSULES/example-game/capsule.json"
+        )
+        capsule.parent.mkdir(parents=True)
+        capsule.write_text(
             json.dumps(
                 {
-                    "capsule_id": "game",
-                    "game": {"title": "Game"},
+                    "capsule_id": "example-game",
+                    "game": {"title": "Example"},
                     "profiles": [
                         {
                             "id": "source",
-                            "platform": "linux",
-                            "adapter": "wine",
-                            "playable": {"backend": "wine"},
+                            "platform": "windows",
+                            "adapter": "direct-wine",
+                        }
+                    ],
+                    "persistent_state": [
+                        {
+                            "id": "save",
+                            "path": "drive_c/save",
+                            "backup": True,
                         }
                     ],
                 }
             ),
             encoding="utf-8",
         )
-        self.destination_parent = self.root / "derivatives"
+        self.capsule = capsule
+        self.destination_parent = self.root / "derived"
         self.destination_parent.mkdir()
         self.bottles = self.root / "bottles"
         self.bottles.mkdir()
-        environment = dict(os.environ)
-        environment["FAKE_BOTTLES_PATH"] = str(self.bottles)
-        environment["FAKE_CORE_LOG"] = str(self.root / "commands.jsonl")
-        environment["XDG_STATE_HOME"] = str(self.root / "state")
+        self.state_backup = self.root / "state-backup"
+        self.state_backup.mkdir()
         self.service = CompositionService(
-            CoreClient(
-                command=(str(Path(__file__).with_name("fake_core.py")),),
-                environment=environment,
-                description="synthetic",
-            ),
-            CapsuleCatalog(),
+            FakeCore()  # type: ignore[arg-type]
+        )
+        self.counter = 0
+
+    def request(
+        self,
+        *,
+        backend: str = "direct-wine",
+        state_backup: Path | None = None,
+        save_set_id: str | None = None,
+    ) -> CompositionRequest:
+        self.counter += 1
+        common: dict[str, object] = {
+            "collection_root": self.collection,
+            "capsule_path": self.capsule,
+            "backend": backend,
+            "runner_id": "runner",
+            "state_backup": state_backup,
+            "save_set_id": save_set_id,
+        }
+        if backend == "bottles":
+            common.update(
+                bottles_path=self.bottles,
+                bottle_name=f"example-{self.counter}",
+            )
+        else:
+            common["destination"] = (
+                self.destination_parent
+                / f"example-{self.counter}"
+            )
+        return CompositionRequest(
+            **common  # type: ignore[arg-type]
         )
 
-    def tearDown(self) -> None:
-        self.temporary.cleanup()
-
-    def test_loads_games_and_filters_runners_by_backend(self) -> None:
-        games, runners, warnings = self.service.load(self.collection)
-        self.assertEqual(len(games), 1)
-        self.assertEqual(len(runners), 2)
-        self.assertEqual(warnings, ("synthetic warning",))
-        umu = self.service.compatible_runners(runners, "umu")
-        self.assertEqual([item.runner_id for item in umu], ["Proton-9.0-203"])
-
-    def test_materializes_and_uses_generated_root_operations(self) -> None:
-        destination = self.destination_parent / "game"
+    def test_materializes_and_writes_minimized_receipt(self) -> None:
+        state_home = self.root / "state"
         with patch.dict(
             os.environ,
-            {"XDG_STATE_HOME": str(self.root / "state")},
+            {"XDG_STATE_HOME": str(state_home)},
+            clear=False,
         ):
             result = self.service.compose(
-                CompositionRequest(
-                    collection_root=self.collection,
-                    capsule_path=self.capsule,
-                    backend="umu",
-                    runner_id="Proton-9.0-203",
-                    destination=destination,
+                self.request(
+                    state_backup=self.state_backup,
+                    save_set_id="main",
                 )
             )
-        self.assertEqual(result.destination, destination)
-        verified = self.service.run_operation(destination, "verify")
-        self.assertEqual(verified.returncode, 0)
-        self.assertEqual(verified.stdout.strip(), "verified")
-        played = self.service.run_operation(destination, "play", ("arg",))
-        self.assertEqual(played.returncode, 0)
-        self.assertEqual(played.stdout.strip(), "played")
+
+        self.assertTrue(result.materialized)
         receipts = list(
-            (self.root / "state/offline-game-vault-gui/operations").glob(
-                "*.json"
-            )
+            (
+                state_home
+                / "offline-game-vault-gui/operations"
+            ).glob("*.json")
         )
         self.assertEqual(len(receipts), 1)
-        document = json.loads(receipts[0].read_text(encoding="utf-8"))
-        self.assertEqual(document["backend"], "umu")
+        text = receipts[0].read_text(encoding="utf-8")
+        document = json.loads(text)
         self.assertEqual(
-            document["backend_facts"]["component_set_id"],
-            "umu-component-set-test",
+            document["request"]["save_set_id"],
+            "main",
         )
-        self.assertNotIn("backend_result", document)
-        self.assertNotIn("arguments", document["request"])
-        self.assertEqual(document["request"]["argument_count"], 0)
-        self.assertNotIn("acceptance", json.dumps(document).casefold())
+        self.assertTrue(
+            document["request"][
+                "state_backup_selected"
+            ]
+        )
+        self.assertNotIn(str(self.state_backup), text)
+        self.assertNotIn(str(result.destination), text)
+
+    def test_accepts_state_backup_for_every_backend(self) -> None:
+        state_home = self.root / "state-all"
+        with patch.dict(
+            os.environ,
+            {"XDG_STATE_HOME": str(state_home)},
+            clear=False,
+        ):
+            for backend in (
+                "bottles",
+                "direct-wine",
+                "umu",
+            ):
+                with self.subTest(backend=backend):
+                    result = self.service.compose(
+                        self.request(
+                            backend=backend,
+                            state_backup=self.state_backup,
+                            save_set_id="main",
+                        )
+                    )
+                    self.assertEqual(
+                        result.backend,
+                        backend,
+                    )
+                    self.assertTrue(result.materialized)
+
+    def test_allows_no_backup_for_state_free_capsule_contract(self) -> None:
+        state_home = self.root / "state-clean"
+        with patch.dict(
+            os.environ,
+            {"XDG_STATE_HOME": str(state_home)},
+            clear=False,
+        ):
+            result = self.service.compose(self.request())
+        self.assertTrue(result.materialized)
+
+    def test_discovers_verified_backups_and_uses_auto_source(self) -> None:
+        backup = (
+            self.collection
+            / "03_PERSISTENT_STATE/example-game/backups/main"
+        )
+        backup.mkdir(parents=True)
+        (backup / "state-backup.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+        save_root = (
+            self.collection
+            / "03_PERSISTENT_STATE/example-game/save-sets"
+        )
+        save_root.mkdir(parents=True)
+        (save_root / "index.json").write_text(
+            json.dumps(
+                {
+                    "save_sets": [
+                        {
+                            "save_set_id": "main",
+                            "display_name": "Main progress",
+                            "source": {
+                                "state_backup": (
+                                    "03_PERSISTENT_STATE/"
+                                    "example-game/backups/main"
+                                )
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        game = GameRecord(
+            capsule_id="example-game",
+            title="Example",
+            capsule_path=self.capsule,
+            source_profiles=(
+                SourceProfile(
+                    profile_id="linux-bottles-flatpak",
+                    platform="linux",
+                    adapter="bottles",
+                    playable_backend=None,
+                ),
+            ),
+        )
+
+        selections, warnings = self.service.state_selections(
+            self.collection,
+            game,
+        )
+        self.assertEqual(warnings, ())
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(selections[0].save_set_id, "main")
+        self.assertEqual(selections[0].backup.path, backup.resolve())
+
+        request = self.request(
+            backend="umu",
+            state_backup=selections[0].backup.path,
+            save_set_id=selections[0].save_set_id,
+        )
+        self.assertIsNone(request.source_profile_id)
+
+    def test_state_selections_are_newest_first_and_classified(
+        self,
+    ) -> None:
+        root = (
+            self.collection
+            / "03_PERSISTENT_STATE/example-game/history"
+        )
+        older = root / "older"
+        newer = root / "newer"
+        identity = root / "identity"
+        for path in (older, newer, identity):
+            path.mkdir(parents=True)
+
+        (older / "state-backup.json").write_text(
+            json.dumps(
+                {
+                    "created_at": "2026-07-18T14:00:00+00:00",
+                    "items": [
+                        {
+                            "kind": "save",
+                            "present": True,
+                            "file_count": 1,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (newer / "state-backup.json").write_text(
+            json.dumps(
+                {
+                    "created_at": "2026-07-18T15:00:00+00:00",
+                    "items": [
+                        {
+                            "kind": "save",
+                            "present": True,
+                            "file_count": 1,
+                        },
+                        {
+                            "kind": "identity",
+                            "present": True,
+                            "file_count": 1,
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (identity / "state-backup.json").write_text(
+            json.dumps(
+                {
+                    "created_at": "2026-07-18T13:00:00+00:00",
+                    "items": [
+                        {
+                            "kind": "identity",
+                            "present": True,
+                            "file_count": 1,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        game = GameRecord(
+            capsule_id="example-game",
+            title="Example",
+            capsule_path=self.capsule,
+            source_profiles=(),
+        )
+        selections, warnings = self.service.state_selections(
+            self.collection,
+            game,
+        )
+
+        self.assertEqual(warnings, ())
+        self.assertEqual(
+            [item.backup.path.name for item in selections],
+            ["newer", "older", "identity"],
+        )
+        self.assertEqual(
+            selections[0].backup.present_save_count,
+            1,
+        )
+        self.assertEqual(
+            selections[2].backup.content_label,
+            "Identity only — no saved game",
+        )
+        self.assertTrue(
+            selections[0].display_name.startswith(
+                selections[0].backup.display_date
+            )
+        )
 
     def test_rejects_destination_inside_collection(self) -> None:
-        with self.assertRaisesRegex(ServiceError, "outside the collection"):
-            self.service.compose(
-                CompositionRequest(
-                    collection_root=self.collection,
-                    capsule_path=self.capsule,
-                    backend="direct-wine",
-                    runner_id="wine-runner",
-                    destination=self.collection / "writable",
-                )
-            )
-
-    def test_rejects_symlinked_generated_operation(self) -> None:
-        destination = self.destination_parent / "unsafe"
-        destination.mkdir()
-        outside = self.root / "outside.sh"
-        outside.write_text("#!/bin/sh\n", encoding="utf-8")
-        outside.chmod(0o755)
-        (destination / "JUGAR.sh").symlink_to(outside)
-        for name in ("VERIFICAR.sh", "DESINSTALAR.sh"):
-            path = destination / name
-            path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            path.chmod(0o755)
-        with self.assertRaisesRegex(ServiceError, "unsafe"):
-            self.service.run_operation(destination, "play")
-
-    def test_remove_passes_generated_script_arguments(self) -> None:
-        destination = self.destination_parent / "ops"
-        destination.mkdir()
-        for name in ("JUGAR.sh", "VERIFICAR.sh", "DESINSTALAR.sh"):
-            path = destination / name
-            path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            path.chmod(0o755)
-        result = self.service.run_operation(
-            destination,
-            "remove",
-            ("--confirm-state-preserved",),
+        request = CompositionRequest(
+            collection_root=self.collection,
+            capsule_path=self.capsule,
+            backend="direct-wine",
+            runner_id="runner",
+            destination=self.collection / "derived",
         )
-        self.assertEqual(result.returncode, 0)
+        with self.assertRaisesRegex(
+            ServiceError,
+            "outside",
+        ):
+            self.service.compose(request)
 
+    def test_rejects_non_directory_state_backup_for_every_backend(
+        self,
+    ) -> None:
+        invalid = self.root / "state-backup.json"
+        invalid.write_text("{}", encoding="utf-8")
 
-    def test_rejects_symlinked_destination_parent(self) -> None:
-        real_parent = self.root / "real-parent"
-        real_parent.mkdir()
-        linked_parent = self.root / "linked-parent"
-        linked_parent.symlink_to(real_parent, target_is_directory=True)
-        with self.assertRaisesRegex(ServiceError, "parent"):
+        for backend in (
+            "bottles",
+            "direct-wine",
+            "umu",
+        ):
+            with self.subTest(backend=backend):
+                with self.assertRaisesRegex(
+                    ServiceError,
+                    "not a regular directory",
+                ):
+                    self.service.compose(
+                        self.request(
+                            backend=backend,
+                            state_backup=invalid,
+                        )
+                    )
+
+    def test_rejects_save_set_without_backup(self) -> None:
+        with self.assertRaisesRegex(
+            ServiceError,
+            "no usable",
+        ):
             self.service.compose(
-                CompositionRequest(
-                    collection_root=self.collection,
-                    capsule_path=self.capsule,
-                    backend="direct-wine",
-                    runner_id="wine-runner",
-                    destination=linked_parent / "game",
-                )
+                self.request(save_set_id="main")
             )
 
-    def test_rejects_non_portable_bottle_name(self) -> None:
-        with self.assertRaisesRegex(ServiceError, "portable"):
-            self.service.compose(
-                CompositionRequest(
-                    collection_root=self.collection,
-                    capsule_path=self.capsule,
-                    backend="bottles",
-                    runner_id="wine-runner",
-                    bottle_name="../escape",
-                    bottles_path=self.bottles,
-                )
+    def test_generated_operation_must_not_be_symlink(self) -> None:
+        destination = self.destination_parent / "existing"
+        destination.mkdir()
+        target = destination / "real.sh"
+        target.write_text("#!/bin/sh\n", encoding="utf-8")
+        target.chmod(0o755)
+        (destination / "JUGAR.sh").symlink_to("real.sh")
+        with self.assertRaisesRegex(
+            ServiceError,
+            "unsafe",
+        ):
+            self.service.run_operation(
+                destination,
+                "play",
             )
-
-    def test_direct_wine_state_backup_is_a_directory(self) -> None:
-        backup = self.root / "backup"
-        backup.mkdir()
-        destination = self.destination_parent / "direct"
-        result = self.service.compose(
-            CompositionRequest(
-                collection_root=self.collection,
-                capsule_path=self.capsule,
-                backend="direct-wine",
-                runner_id="wine-runner",
-                destination=destination,
-                state_backup=backup,
-            )
-        )
-        self.assertEqual(result.destination, destination)
 
 
 if __name__ == "__main__":
