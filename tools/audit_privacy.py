@@ -28,6 +28,12 @@ EXCLUDED_PARTS = {
     "build",
     "dist",
 }
+GENERIC_HOST_VALUES = {
+    "localhost",
+    "root",
+    "runner",
+    "user",
+}
 GENERIC_BAD_PATTERNS = (
     re.compile(r"/run/user/[0-9]+"),
     re.compile(r"/(?:home|var/home)/[^/$<\s]+"),
@@ -65,7 +71,7 @@ def scan(root: Path) -> list[str]:
         concrete = [
             value
             for value in (home, username, hostname)
-            if value and value not in {"root", "user", "localhost"}
+            if value and value not in GENERIC_HOST_VALUES
         ]
         for value in concrete:
             if value in text:
