@@ -108,18 +108,12 @@ class CoreClientTests(unittest.TestCase):
                     "state_backup": backup,
                     "save_set_id": "main",
                 }
+                destination = f"/derived/example-{backend}"
+                values["destination"] = Path(destination)
                 if backend == "bottles":
                     values.update(
                         bottles_path=Path("/bottles"),
                         bottle_name="example",
-                    )
-                    destination = "/bottles/example"
-                else:
-                    values["destination"] = Path(
-                        f"/derived/example-{backend}"
-                    )
-                    destination = (
-                        f"/derived/example-{backend}"
                     )
 
                 request = CompositionRequest(
@@ -147,18 +141,15 @@ class CoreClientTests(unittest.TestCase):
                     arguments[position + 1],
                     str(backup),
                 )
+                self.assertIn("--destination", arguments)
+                destination_position = arguments.index("--destination")
+                self.assertEqual(
+                    arguments[destination_position + 1],
+                    destination,
+                )
                 if backend == "bottles":
                     self.assertIn(
                         "--bottle-name",
-                        arguments,
-                    )
-                    self.assertNotIn(
-                        "--destination",
-                        arguments,
-                    )
-                else:
-                    self.assertIn(
-                        "--destination",
                         arguments,
                     )
 
@@ -261,6 +252,7 @@ class CoreClientTests(unittest.TestCase):
             capsule_path=Path("/collection/capsule.json"),
             backend="bottles",
             runner_id="runner",
+            destination=Path("/derived/example-bottles"),
             bottles_path=Path("/bottles"),
             bottle_name="example",
             arguments=("--flag",),

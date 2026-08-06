@@ -370,6 +370,12 @@ class CoreClient:
                 ("--state-backup", str(request.state_backup))
             )
 
+        if request.destination is None:
+            raise CoreError("A materialization destination is required")
+        arguments.extend(
+            ("--destination", str(request.destination))
+        )
+
         if request.backend == "bottles":
             if not request.bottle_name:
                 raise CoreError("A Bottles derivative name is required")
@@ -382,14 +388,6 @@ class CoreClient:
                     ("--bottles-path", str(request.bottles_path))
                 )
             arguments.extend(("--bottle-name", request.bottle_name))
-        else:
-            if request.destination is None:
-                raise CoreError(
-                    "A destination is required for Direct-Wine and UMU"
-                )
-            arguments.extend(
-                ("--destination", str(request.destination))
-            )
 
         if request.play:
             arguments.append("--play")

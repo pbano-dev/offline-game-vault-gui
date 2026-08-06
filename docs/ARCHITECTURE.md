@@ -38,6 +38,20 @@ publishes atomically.
 The save-set ID is local provenance. It does not modify the operational capsule
 or authorize restoration.
 
+## Bottles external destination
+
+Bottles uses the same explicit destination field as Direct-Wine and UMU.
+`service.py` validates that the new destination is absent, writable through its
+parent, outside the collection, and outside the managed Bottles directory.
+`core.py` always forwards `--destination` to the composition command.
+
+The managed Bottles path remains diagnostic input for collision and
+registration checks. It is never synthesized into the materialization result.
+
+`app.py` tracks whether the bottle-name field was manually edited. Automatic
+game-derived suggestions follow game changes only while that field remains
+automatic; a deliberate manual value is preserved.
+
 ## Threading
 
 Core subprocess operations run through `QThreadPool` and `QRunnable`.

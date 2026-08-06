@@ -346,7 +346,26 @@ class CompositionService:
         if not request.runner_id:
             raise ServiceError("A preserved runner is required")
 
-        destination: Path | None = None
+        if request.destination is None:
+            raise ServiceError("A new destination is required")
+        raw_destination = request.destination.expanduser()
+        if raw_destination.name in {"", ".", ".."}:
+            raise ServiceError("The destination name is invalid")
+        if raw_destination.exists() or raw_destination.is_symlink():
+            raise ServiceError("The destination already exists")
+
+        parent = raw_destination.parent
+        if parent.is_symlink() or not parent.is_dir():
+            raise ServiceError(
+                "The destination parent must be a regular directory"
+            )
+        parent = parent.resolve()
+        destination = parent / raw_destination.name
+        if destination.is_relative_to(root):
+            raise ServiceError(
+                "Writable derivatives must remain outside the collection"
+            )
+
         bottles_path = request.bottles_path
         bottle_name = request.bottle_name
 
@@ -373,31 +392,11 @@ class CompositionService:
                         "The managed Bottles path is not a regular directory"
                     )
                 bottles_path = bottles_path.resolve()
-        else:
-            if request.destination is None:
-                raise ServiceError("A new destination is required")
-            raw_destination = request.destination.expanduser()
-            if raw_destination.name in {"", ".", ".."}:
-                raise ServiceError("The destination name is invalid")
-            if (
-                raw_destination.exists()
-                or raw_destination.is_symlink()
-            ):
-                raise ServiceError(
-                    "The destination already exists"
-                )
-
-            parent = raw_destination.parent
-            if parent.is_symlink() or not parent.is_dir():
-                raise ServiceError(
-                    "The destination parent must be a regular directory"
-                )
-            parent = parent.resolve()
-            destination = parent / raw_destination.name
-            if destination.is_relative_to(root):
-                raise ServiceError(
-                    "Writable derivatives must remain outside the collection"
-                )
+                if destination.is_relative_to(bottles_path):
+                    raise ServiceError(
+                        "The external Bottles destination must remain "
+                        "outside the managed Bottles directory"
+                    )
 
         state_backup = request.state_backup
         save_set_id = request.save_set_id

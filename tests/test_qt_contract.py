@@ -82,6 +82,41 @@ class QtPresentationContractTests(unittest.TestCase):
             service,
         )
 
+    def test_bottles_destination_and_manual_name_contract(self) -> None:
+        text = APP.read_text(encoding="utf-8")
+        for token in (
+            "self._bottle_name_manual = False",
+            "def setPlaceholderText(self, value: str) -> None:",
+            "self.edit.setPlaceholderText(value)",
+            "self.bottle_name_edit.textEdited.connect(",
+            "self._bottle_name_manual = bool(text.strip())",
+            'self._set_row_visible("destination", True)',
+            "External Bottles materialization destination",
+        ):
+            self.assertIn(token, text)
+
+        request = text[
+            text.index("    def _request("):
+            text.index(
+                "    def _compose(",
+                text.index("    def _request("),
+            )
+        ]
+        self.assertIn(
+            "raw_destination = self.destination_edit.text().strip()",
+            request,
+        )
+        self.assertIn("destination = Path(raw_destination)", request)
+
+        operation = text[
+            text.index("    def _operation("):
+            text.index(
+                "    def _worker_failed(",
+                text.index("    def _operation("),
+            )
+        ]
+        self.assertNotIn("Path(managed) / bottle", operation)
+
     def test_no_gtk_compatibility_layer(self) -> None:
         source = ROOT / "src/offline_game_vault_gui"
         names = {path.name for path in source.glob("*.py")}

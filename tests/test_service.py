@@ -55,16 +55,11 @@ class FakeCore:
         self,
         request: CompositionRequest,
     ) -> CompositionResult:
+        assert request.destination is not None
         if request.backend == "bottles":
             assert request.bottles_path is not None
             assert request.bottle_name is not None
-            destination = (
-                request.bottles_path
-                / request.bottle_name
-            )
-        else:
-            assert request.destination is not None
-            destination = request.destination
+        destination = request.destination
 
         destination.mkdir()
         for name in (
@@ -154,15 +149,14 @@ class CompositionServiceTests(unittest.TestCase):
             "state_backup": state_backup,
             "save_set_id": save_set_id,
         }
+        common["destination"] = (
+            self.destination_parent
+            / f"example-{self.counter}"
+        )
         if backend == "bottles":
             common.update(
                 bottles_path=self.bottles,
                 bottle_name=f"example-{self.counter}",
-            )
-        else:
-            common["destination"] = (
-                self.destination_parent
-                / f"example-{self.counter}"
             )
         return CompositionRequest(
             **common  # type: ignore[arg-type]

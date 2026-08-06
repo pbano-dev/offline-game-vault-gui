@@ -1,5 +1,18 @@
 # Release notes — 0.5.0a4
 
+## Bottles external materialization
+
+- Requires an explicit destination for Bottles, matching the user-facing
+  destination contract already used by Direct-Wine and UMU.
+- Displays and returns the external materialization root instead of deriving a
+  private Bottles directory.
+- Keeps Bottles managed-path discovery only for registration safety.
+- Recalculates the suggested bottle name when the selected game changes until
+  the user deliberately edits the field.
+- Preserves a deliberate manual bottle name across later selection changes.
+- Continues to execute only core-generated `JUGAR.sh`, `VERIFICAR.sh`, and
+  `DESINSTALAR.sh` operations.
+
 ## Persistent-state timeline
 
 - Discovers every collection-contained `state-backup.json` for the selected

@@ -337,6 +337,9 @@ class PathEdit(QWidget):
     def setText(self, value: str) -> None:
         self.edit.setText(value)
 
+    def setPlaceholderText(self, value: str) -> None:
+        self.edit.setPlaceholderText(value)
+
     def setReadOnly(self, value: bool) -> None:
         self.edit.setReadOnly(value)
         self.button.setEnabled(not value)
@@ -386,6 +389,7 @@ class MainWindow(QMainWindow):
         self.visible_runners: tuple[RunnerRecord, ...] = ()
         self.state_selections: tuple[StateSelectionRecord, ...] = ()
         self.last_destination: Path | None = None
+        self._bottle_name_manual = False
         self._busy_depth = 0
         self._workers: set[Worker] = set()
         self._rows: dict[str, tuple[QLabel, QWidget]] = {}
@@ -549,7 +553,7 @@ class MainWindow(QMainWindow):
         target_group = QGroupBox("Writable target", page)
         target_form = self._new_form(target_group)
         self.destination_edit = PathEdit(
-            placeholder="Direct-Wine / UMU destination",
+            placeholder="New writable materialization destination",
             parent=target_group,
         )
         self.bottle_name_edit = QLineEdit(target_group)
@@ -584,7 +588,7 @@ class MainWindow(QMainWindow):
 
         self._add_row(
             target_form,
-            "Direct-Wine / UMU destination",
+            "Materialization destination",
             self.destination_edit,
             "destination",
         )
@@ -740,6 +744,9 @@ class MainWindow(QMainWindow):
         )
         self.backend_combo.currentIndexChanged.connect(
             self._backend_changed
+        )
+        self.bottle_name_edit.textEdited.connect(
+            self._bottle_name_edited
         )
         self.save_combo.currentIndexChanged.connect(
             self._save_changed
@@ -1035,7 +1042,22 @@ class MainWindow(QMainWindow):
         backend = self._selected_backend()
         bottles = backend == "bottles"
         umu = backend == "umu"
-        self._set_row_visible("destination", not bottles)
+        destination_label, _destination_widget = self._rows[
+            "destination"
+        ]
+        if bottles:
+            destination_label.setText(
+                "External Bottles materialization destination"
+            )
+            self.destination_edit.setPlaceholderText(
+                "New external Bottles materialization"
+            )
+        else:
+            destination_label.setText("Materialization destination")
+            self.destination_edit.setPlaceholderText(
+                "New writable materialization destination"
+            )
+        self._set_row_visible("destination", True)
         self._set_row_visible("bottle_name", bottles)
         self._set_row_visible("bottles_path", bottles)
         self._set_row_visible("save", True)
@@ -1049,6 +1071,9 @@ class MainWindow(QMainWindow):
             self._load_bottles_path()
         elif umu and self.service is not None:
             self._load_component_sets()
+
+    def _bottle_name_edited(self, text: str) -> None:
+        self._bottle_name_manual = bool(text.strip())
 
     def _filter_runners(self) -> None:
         backend = self._selected_backend()
@@ -1079,12 +1104,10 @@ class MainWindow(QMainWindow):
         if game is None:
             return
         backend = self._selected_backend()
-        if backend == "bottles":
-            if not self.bottle_name_edit.text().strip():
-                self.bottle_name_edit.setText(
-                    f"{game.capsule_id}-bottle"
-                )
-            return
+        if backend == "bottles" and not self._bottle_name_manual:
+            self.bottle_name_edit.setText(
+                f"{game.capsule_id}-bottle"
+            )
 
         parent = self.destination_parent_edit.text().strip()
         if parent:
@@ -1167,7 +1190,12 @@ class MainWindow(QMainWindow):
             raise ServiceError("Select a collection root")
 
         backend = self._selected_backend()
-        destination: Path | None = None
+        raw_destination = self.destination_edit.text().strip()
+        if not raw_destination:
+            raise ServiceError(
+                "Select a new writable destination"
+            )
+        destination = Path(raw_destination)
         bottles_path: Path | None = None
         bottle_name: str | None = None
 
@@ -1176,15 +1204,6 @@ class MainWindow(QMainWindow):
             managed = self.bottles_path_value.text().strip()
             if managed and managed != "Discovered by the core":
                 bottles_path = Path(managed)
-        else:
-            raw_destination = (
-                self.destination_edit.text().strip()
-            )
-            if not raw_destination:
-                raise ServiceError(
-                    "Select a new writable destination"
-                )
-            destination = Path(raw_destination)
 
         selection = self._selected_state_selection()
         save_set_id: str | None = None
@@ -1271,12 +1290,7 @@ class MainWindow(QMainWindow):
         destination = self.last_destination
         if destination is None:
             raw = self.destination_edit.text().strip()
-            if self._selected_backend() == "bottles":
-                managed = self.bottles_path_value.text().strip()
-                bottle = self.bottle_name_edit.text().strip()
-                if managed and bottle:
-                    destination = Path(managed) / bottle
-            elif raw:
+            if raw:
                 destination = Path(raw)
         if destination is None:
             self._worker_failed(

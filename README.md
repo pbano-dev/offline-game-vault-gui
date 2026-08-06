@@ -33,6 +33,15 @@ capsule.json
 The GUI never derives prefix paths, save paths, AppIDs, DLC ownership, runner
 fallbacks, or backend launch commands.
 
+For Bottles, the destination selected in the GUI is the authoritative external
+materialization root. The GUI passes it to the core and later invokes only the
+generated root scripts. The managed Bottles path is displayed for diagnostic
+registration purposes; it is not presented as the materialization destination.
+
+The suggested bottle name is recalculated when the selected game changes until
+the user edits the name manually. A deliberate manual name is then preserved
+across selection changes.
+
 ## Core 0.12 state contract
 
 One public option is used for every backend:
@@ -82,8 +91,8 @@ The frontend provides:
 - explicit core-checkout selection and compatibility probing;
 - game, backend, source-profile, and preserved-runner selection;
 - backend-neutral preserved save-set and backup selection;
-- Bottles managed-path discovery;
-- Direct-Wine and UMU target selection;
+- Bottles managed-path discovery for rebuildable registration;
+- external target selection for Bottles, Direct-Wine, and UMU;
 - UMU component-set diagnostics;
 - additional Direct-Wine/UMU play arguments;
 - generated Remove arguments;
