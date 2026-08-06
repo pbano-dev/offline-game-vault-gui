@@ -14,6 +14,9 @@ import tomllib
 MANIFEST = "SOURCE_MANIFEST_SHA256.txt"
 EXCLUDED_PARTS = {
     ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
     ".venv",
     "__pycache__",
     "build",
