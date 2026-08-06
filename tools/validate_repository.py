@@ -27,7 +27,28 @@ EXCLUDED_FILES = {
 }
 
 
+def tracked_files(root: Path) -> frozenset[str] | None:
+    """Paths the repository tracks, or None when git cannot answer.
+
+    The manifest describes what a fresh checkout contains. Enumerating the
+    working tree instead let any stray file on disk into it, and validation
+    then failed everywhere that file did not exist.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    names = completed.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return frozenset(name for name in names if name)
+
+
 def included_files(root: Path) -> tuple[Path, ...]:
+    tracked = tracked_files(root)
     result: list[Path] = []
     for path in root.rglob("*"):
         relative = path.relative_to(root)
@@ -37,8 +58,14 @@ def included_files(root: Path) -> tuple[Path, ...]:
             raise RuntimeError(
                 f"source tree contains a symlink: {relative}"
             )
-        if path.is_file() and relative.as_posix() not in EXCLUDED_FILES:
-            result.append(path)
+        if not path.is_file():
+            continue
+        name = relative.as_posix()
+        if name in EXCLUDED_FILES:
+            continue
+        if tracked is not None and name not in tracked:
+            continue
+        result.append(path)
     return tuple(sorted(result))
 
 
