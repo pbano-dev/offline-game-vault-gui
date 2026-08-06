@@ -83,10 +83,13 @@ class CoreClient:
         if explicit_source is not None:
             return cls._from_source_root(explicit_source, explicit=True)
 
+        # ``base`` is this repository's own root, so the core checkout is
+        # looked for beside it. Using the parent directory here searched one
+        # level too high and silently fell through to an installed ``ogv``.
         base = (
             repository_root.expanduser().resolve()
             if repository_root is not None
-            else Path(__file__).resolve().parents[3]
+            else Path(__file__).resolve().parents[2]
         )
         sibling = base.parent / "offline-game-vault"
         try:
