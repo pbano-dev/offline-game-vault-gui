@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "offline-game-vault-gui"
-version = "0.5.0a4"
+version = "0.5.0a5"
 description = "PySide6 Qt Widgets GUI for backend-neutral Offline Game Vault compositions"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
