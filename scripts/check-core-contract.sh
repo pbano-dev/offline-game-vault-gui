@@ -1,28 +1,62 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-CORE_ROOT="${1:-${OGV_SOURCE_ROOT:-"$ROOT/../offline-game-vault"}}"
+if (($# != 1)); then
+    echo "Usage: $0 <offline-game-vault-checkout>" >&2
+    exit 2
+fi
 
-if [[ ! -f "$CORE_ROOT/src/offline_game_vault/cli.py" ]]; then
-    echo "ERROR: no compatible core checkout at the selected path" >&2
+CORE="$(cd -- "$1" && pwd -P)"
+CLI="$CORE/src/offline_game_vault/cli.py"
+
+if [[ ! -f "$CLI" || -L "$CLI" ]]; then
+    echo "ERROR: core checkout has no regular CLI module" >&2
     exit 1
 fi
 
-export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$CORE/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
-export OGV_SOURCE_ROOT="$CORE_ROOT"
 
-python3 -B - <<'PY_CORE_PROBE'
-from pathlib import Path
-import os
+version="$(python3 -B -m offline_game_vault.cli --version)"
+help="$(python3 -B -m offline_game_vault.cli compose --help)"
+state_help="$(
+    python3 -B -m offline_game_vault.cli         verify-state-backup --help
+)"
 
-from offline_game_vault_gui.core import CoreClient
+python3 -B - "$version" "$help" "$state_help" <<'PY'
+from __future__ import annotations
+import re
+import sys
 
-client = CoreClient.resolve(
-    source_root=Path(os.environ["OGV_SOURCE_ROOT"]),
+version_text = sys.argv[1]
+help_text = sys.argv[2]
+state_help_text = sys.argv[3]
+match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", version_text)
+if match is None:
+    raise SystemExit(f"Cannot parse core version: {version_text!r}")
+version = tuple(int(value) for value in match.groups())
+if version < (0, 12, 2):
+    raise SystemExit(
+        f"Core {'.'.join(match.groups())} is too old; 0.12.2+ required"
+    )
+for token in (
+    "--backend",
+    "--runner",
+    "--state-backup",
+    "--bottles-path",
+    "--bottle-name",
+    "--destination",
+    "--json",
+):
+    if token not in help_text:
+        raise SystemExit(f"compose help lacks {token}")
+for token in ("--capsule", "--backup", "--json"):
+    if token not in state_help_text:
+        raise SystemExit(
+            f"verify-state-backup help lacks {token}"
+        )
+print(
+    "CORE CONTRACT PASSED: "
+    f"version={'.'.join(match.groups())}, backend-neutral-state=yes"
 )
-probe = client.probe()
-
-print(f"Real core contract: compatible ({probe.version})")
-PY_CORE_PROBE
+PY

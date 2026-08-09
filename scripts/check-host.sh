@@ -1,28 +1,41 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-python3 - <<'PY'
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$ROOT"
+
+python3 -B - <<'PY'
+from __future__ import annotations
+import importlib.util
 import sys
-if sys.version_info < (3, 11):
-    raise SystemExit("Python 3.11 or newer is required.")
-print(sys.version.split()[0])
+
+if not ((3, 11) <= sys.version_info[:2] < (3, 15)):
+    raise SystemExit(
+        f"Unsupported Python: {sys.version.split()[0]}; "
+        "expected >=3.11,<3.15"
+    )
+
+spec = importlib.util.find_spec("PySide6")
+if spec is None:
+    raise SystemExit(
+        "PySide6 is not installed. Install the preserved compatible wheels."
+    )
+
+import PySide6
+print(f"Python: {sys.version.split()[0]}")
+print(f"PySide6: {PySide6.__version__}")
 PY
 
-python3 - <<'PY'
-try:
-    import gi
-    gi.require_version("Gtk", "4.0")
-    gi.require_version("Adw", "1")
-    from gi.repository import Adw, Gtk  # noqa: F401
-except Exception as exc:
-    raise SystemExit(f"GTK4/libadwaita/PyGObject unavailable: {exc}")
-print("GTK4/libadwaita/PyGObject: available")
-PY
+if [[ -n "${OGV_SOURCE_ROOT:-}" ]]; then
+    CORE="$OGV_SOURCE_ROOT"
+elif [[ -d "$(dirname "$ROOT")/offline-game-vault" ]]; then
+    CORE="$(dirname "$ROOT")/offline-game-vault"
+else
+    CORE=""
+fi
 
-PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" \
-python3 - <<'PY'
-from offline_game_vault_gui.core import CoreClient
-client = CoreClient.resolve()
-probe = client.probe()
-print(f"Core: {probe.version} ({probe.description})")
-PY
+if [[ -n "$CORE" ]]; then
+    "$ROOT/scripts/check-core-contract.sh" "$CORE"
+else
+    echo "Core checkout: not discovered; select it in the GUI."
+fi

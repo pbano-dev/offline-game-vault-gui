@@ -1,5 +1,6 @@
+include LICENSE
 include README.md
 include RELEASE_NOTES.md
-include LICENSE
-recursive-include data *
+include VALIDATION_REPORT.md
+include data/*.desktop
 recursive-include docs *.md

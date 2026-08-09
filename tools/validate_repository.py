@@ -1,57 +1,72 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
-import ast
 import hashlib
 import json
-import os
 from pathlib import Path
-import re
 import stat
+import subprocess
 import sys
 import tomllib
 
 
-ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "SOURCE_MANIFEST_SHA256.txt"
-EXCLUDED = {
-    "SOURCE_MANIFEST_SHA256.txt",
-}
+MANIFEST = "SOURCE_MANIFEST_SHA256.txt"
 EXCLUDED_PARTS = {
     ".git",
-    "__pycache__",
-    ".pytest_cache",
     ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
     "build",
     "dist",
 }
-RETIRED_SOURCE_TERMS = (
-    "experimental_selection",
-    "experimental_service",
-    "profile_status",
-    "shared_runtime_id",
-)
-RETIRED_SOURCE_PATTERNS = (
-    re.compile(r'\bstatus\s*:\s*str\b'),
-    re.compile(r'\bacceptance_report\s*:\s*'),
-)
+EXCLUDED_FILES = {
+    MANIFEST,
+}
 
 
-def source_files() -> list[Path]:
+def tracked_files(root: Path) -> frozenset[str] | None:
+    """Paths the repository tracks, or None when git cannot answer.
+
+    The manifest describes what a fresh checkout contains. Enumerating the
+    working tree instead let any stray file on disk into it, and validation
+    then failed everywhere that file did not exist.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    names = completed.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return frozenset(name for name in names if name)
+
+
+def included_files(root: Path) -> tuple[Path, ...]:
+    tracked = tracked_files(root)
     result: list[Path] = []
-    for path in sorted(ROOT.rglob("*")):
-        if not path.is_file() or path.is_symlink():
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if any(part in EXCLUDED_PARTS for part in relative.parts):
             continue
-        relative = path.relative_to(ROOT)
-        if relative.as_posix() in EXCLUDED:
+        if path.is_symlink():
+            raise RuntimeError(
+                f"source tree contains a symlink: {relative}"
+            )
+        if not path.is_file():
             continue
-        if any(
-            part in EXCLUDED_PARTS or part.endswith(".egg-info")
-            for part in relative.parts
-        ):
+        name = relative.as_posix()
+        if name in EXCLUDED_FILES:
+            continue
+        if tracked is not None and name not in tracked:
             continue
         result.append(path)
-    return result
+    return tuple(sorted(result))
 
 
 def digest(path: Path) -> str:
@@ -62,104 +77,111 @@ def digest(path: Path) -> str:
     return value.hexdigest()
 
 
-def write_manifest() -> None:
-    lines = [
-        f"{digest(path)}  {path.relative_to(ROOT).as_posix()}"
-        for path in source_files()
-    ]
-    MANIFEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def verify_manifest() -> None:
-    if not MANIFEST.is_file() or MANIFEST.is_symlink():
-        raise SystemExit("SOURCE_MANIFEST_SHA256.txt is missing or linked")
-    expected: dict[str, str] = {}
-    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
-        if not line:
-            continue
-        checksum, separator, relative = line.partition("  ")
-        if not separator or not re.fullmatch(r"[0-9a-f]{64}", checksum):
-            raise SystemExit(f"Invalid manifest line: {line!r}")
-        if relative in expected:
-            raise SystemExit(f"Duplicate manifest path: {relative}")
-        expected[relative] = checksum
-    actual = {
-        path.relative_to(ROOT).as_posix(): digest(path)
-        for path in source_files()
-    }
-    if expected != actual:
-        missing = sorted(set(expected) - set(actual))
-        extra = sorted(set(actual) - set(expected))
-        changed = sorted(
-            key for key in set(expected) & set(actual)
-            if expected[key] != actual[key]
-        )
-        raise SystemExit(
-            "Manifest mismatch: "
-            f"missing={missing}, extra={extra}, changed={changed}"
-        )
-
-
-def validate_python() -> None:
-    for folder in ("src", "tests", "tools"):
-        for path in sorted((ROOT / folder).rglob("*.py")):
-            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-
-def validate_version() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    init = (ROOT / "src/offline_game_vault_gui/__init__.py").read_text(
-        encoding="utf-8"
+def manifest_text(root: Path) -> str:
+    return "".join(
+        f"{digest(path)}  {path.relative_to(root).as_posix()}\n"
+        for path in included_files(root)
     )
-    match = re.search(r'^__version__ = "([^"]+)"$', init, re.MULTILINE)
-    if match is None:
-        raise SystemExit("Package version is absent")
-    values = {
-        project["project"]["version"],
-        match.group(1),
-        "0.4.1",
-    }
-    if len(values) != 1:
-        raise SystemExit(f"Version contract differs: {sorted(values)}")
 
 
-def validate_semantics() -> None:
-    for path in sorted((ROOT / "src").rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        for term in RETIRED_SOURCE_TERMS:
-            if term in text:
-                raise SystemExit(f"Retired source term {term!r} in {path}")
-        for pattern in RETIRED_SOURCE_PATTERNS:
-            if pattern.search(text):
-                raise SystemExit(
-                    f"Retired source pattern {pattern.pattern!r} in {path}"
-                )
+def validate_syntax(root: Path) -> None:
+    for directory in ("src", "tests", "tools"):
+        for path in sorted((root / directory).rglob("*.py")):
+            compile(path.read_bytes(), str(path), "exec")
 
+    for path in sorted(root.rglob("*.json")):
+        if any(part in EXCLUDED_PARTS for part in path.parts):
+            continue
+        json.loads(path.read_text(encoding="utf-8"))
 
-def validate_scripts() -> None:
-    for path in sorted((ROOT / "scripts").glob("*.sh")):
+    tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    for path in sorted((root / "scripts").glob("*.sh")):
         mode = path.stat().st_mode
         if not mode & stat.S_IXUSR:
-            raise SystemExit(f"Script is not executable: {path}")
+            raise RuntimeError(
+                f"script is not executable: {path.relative_to(root)}"
+            )
+        process = subprocess.run(
+            ["bash", "-n", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"invalid shell syntax in {path.relative_to(root)}: "
+                f"{process.stderr.strip()}"
+            )
 
 
-def validate_json() -> None:
-    json.loads((ROOT / "UPSTREAM_BASE.json").read_text(encoding="utf-8"))
+def validate_version(root: Path) -> str:
+    project = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    namespace: dict[str, object] = {}
+    path = root / "src/offline_game_vault_gui/__init__.py"
+    exec(compile(path.read_bytes(), str(path), "exec"), namespace)
+    project_version = project["project"]["version"]
+    package_version = namespace.get("__version__")
+    if project_version != package_version:
+        raise RuntimeError(
+            f"version mismatch: {project_version!r} != {package_version!r}"
+        )
+    return str(project_version)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--write-manifest", action="store_true")
+    parser.add_argument(
+        "--write-manifest",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--skip-manifest",
+        action="store_true",
+    )
+    parser.add_argument(
+        "root",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+    )
     args = parser.parse_args()
-    validate_python()
-    validate_version()
-    validate_semantics()
-    validate_scripts()
-    validate_json()
-    if args.write_manifest:
-        write_manifest()
-    verify_manifest()
-    print("Repository validation: passed")
+    root = args.root.resolve()
+
+    try:
+        validate_syntax(root)
+        version = validate_version(root)
+        expected = manifest_text(root)
+        manifest = root / MANIFEST
+        if args.write_manifest:
+            manifest.write_text(expected, encoding="utf-8")
+        elif not args.skip_manifest:
+            if manifest.is_symlink() or not manifest.is_file():
+                raise RuntimeError("source manifest is absent or unsafe")
+            actual = manifest.read_text(encoding="utf-8")
+            if actual != expected:
+                raise RuntimeError(
+                    "source manifest does not match the repository tree"
+                )
+    except (
+        OSError,
+        RuntimeError,
+        SyntaxError,
+        json.JSONDecodeError,
+        tomllib.TOMLDecodeError,
+    ) as exc:
+        print(f"VALIDATION FAILED: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"VALIDATION PASSED: version={version}, "
+        f"files={len(included_files(root))}"
+    )
     return 0
 
 

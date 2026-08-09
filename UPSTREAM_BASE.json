@@ -1,25 +1,20 @@
 {
   "schema": 1,
-  "record_type": "historical-migration-base",
-  "purpose": "Records the source and core state used to generate GUI 0.4.1. It is not the current runtime compatibility declaration.",
+  "record_type": "qt-state-timeline-source",
+  "generated": "2026-08-05",
   "gui_source": {
     "repository": "https://github.com/pbano-dev/offline-game-vault-gui",
-    "branch": "main",
-    "observed_version": "0.3.3"
+    "branch": "PySide6_Qt-Widgets-GUI",
+    "version": "0.5.0a3"
   },
   "core_contract": {
     "repository": "https://github.com/pbano-dev/offline-game-vault",
-    "branch": "refactor/state-free-components",
-    "minimum_version": "0.11.4",
-    "observed_commit": "620d412",
-    "required_commands": [
-      "discover-bottles-path",
-      "list-preserved-runners",
-      "list-shared-umu-runtimes",
-      "compose"
-    ]
+    "branch": "fix/historical-state-compatibility-0.12.2",
+    "commit": "8e23eef",
+    "minimum_version": "0.12.2"
   },
-  "target_gui_version": "0.4.1",
-  "generated": "2026-08-03",
-  "architecture": "state-free-component-composition"
+  "target_gui_version": "0.5.0a4",
+  "presentation": "PySide6 Qt Widgets",
+  "state_contract": "backend-neutral historical-compatible",
+  "gtk_layer_removed": true
 }
