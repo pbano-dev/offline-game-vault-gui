@@ -44,6 +44,7 @@ for token in (
     "--runner",
     "--state-backup",
     "--no-state",
+    "--save-id",
     "--bottles-path",
     "--bottle-name",
     "--destination",

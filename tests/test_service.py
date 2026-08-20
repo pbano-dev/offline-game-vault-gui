@@ -140,6 +140,7 @@ class CompositionServiceTests(unittest.TestCase):
         state_backup: Path | None = None,
         save_set_id: str | None = None,
         no_state: bool = False,
+        umu_save_id: str | None = None,
     ) -> CompositionRequest:
         self.counter += 1
         common: dict[str, object] = {
@@ -150,6 +151,7 @@ class CompositionServiceTests(unittest.TestCase):
             "state_backup": state_backup,
             "save_set_id": save_set_id,
             "no_state": no_state,
+            "umu_save_id": umu_save_id,
         }
         common["destination"] = (
             self.destination_parent
@@ -260,6 +262,47 @@ class CompositionServiceTests(unittest.TestCase):
                 self.request(
                     state_backup=self.state_backup,
                     no_state=True,
+                )
+            )
+
+    def test_accepts_umu_selectable_state_without_generic_backup(
+        self,
+    ) -> None:
+        state_home = self.root / "state-umu-save"
+        core = self.service.core
+        with (
+            patch.dict(
+                os.environ,
+                {"XDG_STATE_HOME": str(state_home)},
+                clear=False,
+            ),
+            patch.object(
+                core,
+                "compose",
+                wraps=core.compose,
+            ) as compose,
+        ):
+            result = self.service.compose(
+                self.request(
+                    backend="umu",
+                    umu_save_id="slot-a",
+                )
+            )
+        self.assertTrue(result.materialized)
+        normalized = compose.call_args.args[0]
+        self.assertEqual(normalized.umu_save_id, "slot-a")
+        self.assertFalse(normalized.no_state)
+        self.assertIsNone(normalized.state_backup)
+
+    def test_rejects_umu_selectable_state_for_other_backends(self) -> None:
+        with self.assertRaisesRegex(
+            ServiceError,
+            "only be used with the UMU backend",
+        ):
+            self.service.compose(
+                self.request(
+                    backend="direct-wine",
+                    umu_save_id="slot-a",
                 )
             )
 

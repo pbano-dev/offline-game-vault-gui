@@ -59,7 +59,15 @@ compose \
 `--state-backup` restores preserved state. `--no-state` deliberately starts
 from zero. These choices are mutually exclusive.
 
-The GUI can obtain that directory from either:
+For a preserved UMU-native profile, the capsule may also declare
+`umu.state_archives`. Archives with policy `always` are injected by the core
+when state is provisioned and are not user choices. Archives with policy
+`selectable` appear in **Initial game state** and the GUI sends their exact
+`--save-id`. Choosing an UMU-native save also pins the source profile that
+declares it. Choosing **Start a new game** still sends `--no-state`, which
+explicitly skips both `always` and `selectable` UMU state archives.
+
+The GUI can obtain a backend-neutral state-backup directory from either:
 
 - a registered private save set under
   `03_PERSISTENT_STATE/<capsule_id>/save-sets/index.json`; or

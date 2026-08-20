@@ -378,6 +378,17 @@ class CoreClient:
                 ("--state-backup", str(request.state_backup))
             )
 
+        if request.umu_save_id is not None:
+            if request.backend != "umu":
+                raise CoreError(
+                    "--save-id is only supported for the UMU backend"
+                )
+            if request.no_state:
+                raise CoreError(
+                    "--no-state and --save-id are mutually exclusive"
+                )
+            arguments.extend(("--save-id", request.umu_save_id))
+
         if request.destination is None:
             raise CoreError("A materialization destination is required")
         arguments.extend(

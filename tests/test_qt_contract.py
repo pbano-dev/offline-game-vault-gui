@@ -51,6 +51,9 @@ class QtPresentationContractTests(unittest.TestCase):
             "Select verified state backup",
             "Start a new game",
             "materialize explicitly with --no-state",
+            "UMU save —",
+            "UmuStateArchiveRecord",
+            "umu_save_id=umu_save_id",
             'self._set_row_visible("save", True)',
             'self._set_row_visible("state_backup", True)',
         ):

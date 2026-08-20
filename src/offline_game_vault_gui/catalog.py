@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .model import GameRecord, SourceProfile
+from .model import (
+    GameRecord,
+    SourceProfile,
+    UmuStateArchiveRecord,
+)
 
 
 class CatalogError(RuntimeError):
@@ -127,9 +131,42 @@ class CapsuleCatalog:
         elif playable is not None:
             raise CatalogError(f"Profile playable is not an object: {path}")
 
+        umu_state_archives: list[UmuStateArchiveRecord] = []
+        umu = value.get("umu")
+        if adapter == "umu" and isinstance(umu, dict):
+            raw_archives = umu.get("state_archives", [])
+            if isinstance(raw_archives, list):
+                for raw_archive in raw_archives:
+                    if not isinstance(raw_archive, dict):
+                        continue
+                    archive_id = raw_archive.get("id")
+                    filename = raw_archive.get("filename")
+                    digest = raw_archive.get("digest")
+                    policy = raw_archive.get("policy")
+                    if (
+                        not isinstance(archive_id, str)
+                        or not archive_id
+                        or not isinstance(filename, str)
+                        or not filename
+                        or not isinstance(digest, str)
+                        or not digest
+                        or policy not in {"always", "selectable"}
+                    ):
+                        continue
+                    umu_state_archives.append(
+                        UmuStateArchiveRecord(
+                            profile_id=profile_id,
+                            archive_id=archive_id,
+                            filename=filename,
+                            digest=digest,
+                            policy=policy,
+                        )
+                    )
+
         return SourceProfile(
             profile_id=profile_id,
             platform=platform,
             adapter=adapter,
             playable_backend=playable_backend,
+            umu_state_archives=tuple(umu_state_archives),
         )

@@ -66,6 +66,7 @@ from .model import (
     RunnerRecord,
     SourceProfile,
     StateSelectionRecord,
+    UmuStateArchiveRecord,
 )
 from .service import CompositionService, ServiceError
 
@@ -745,6 +746,9 @@ class MainWindow(QMainWindow):
         self.backend_combo.currentIndexChanged.connect(
             self._backend_changed
         )
+        self.profile_combo.currentIndexChanged.connect(
+            self._state_context_changed
+        )
         self.bottle_name_edit.textEdited.connect(
             self._bottle_name_edited
         )
@@ -923,6 +927,16 @@ class MainWindow(QMainWindow):
             else None
         )
 
+    def _selected_umu_state_archive(
+        self,
+    ) -> UmuStateArchiveRecord | None:
+        value = self.save_combo.current_payload()
+        return (
+            value
+            if isinstance(value, UmuStateArchiveRecord)
+            else None
+        )
+
     def _selected_backend(self) -> Backend:
         value = self.backend_combo.currentData(
             Qt.ItemDataRole.UserRole
@@ -964,10 +978,30 @@ class MainWindow(QMainWindow):
         self._update_default_target()
         self._load_save_sets()
 
-    def _load_save_sets(self) -> None:
+    def _umu_state_archive_options(
+        self,
+    ) -> tuple[UmuStateArchiveRecord, ...]:
         game = self._selected_game()
-        raw = self.collection_edit.text().strip()
-        self.state_selections = ()
+        if game is None or self._selected_backend() != "umu":
+            return ()
+        selected_profile = self._selected_profile()
+        profiles = (
+            (selected_profile,)
+            if selected_profile is not None
+            else tuple(
+                profile
+                for profile in game.source_profiles
+                if profile.adapter == "umu"
+            )
+        )
+        return tuple(
+            archive
+            for profile in profiles
+            for archive in profile.umu_state_archives
+            if archive.policy == "selectable"
+        )
+
+    def _populate_state_combo(self, *_args: object) -> None:
         self.save_combo.blockSignals(True)
         self.save_combo.clear()
         self.save_combo.add_rich_item(
@@ -978,7 +1012,48 @@ class MainWindow(QMainWindow):
             ),
             None,
         )
+        for archive in self._umu_state_archive_options():
+            self.save_combo.add_rich_item(
+                f"UMU save — {archive.archive_id}",
+                (
+                    "Selectable preserved UMU state archive"
+                    f" • profile {archive.profile_id}"
+                ),
+                archive,
+            )
+        for item in self.state_selections:
+            availability = (
+                f"{item.backup.present_count}/"
+                f"{item.backup.item_count} present"
+            )
+            if item.backup.missing_count:
+                availability += (
+                    f"; {item.backup.missing_count} missing"
+                )
+            secondary = " • ".join(
+                value
+                for value in (
+                    item.backup.content_label,
+                    availability,
+                    item.backup.backup_kind,
+                    item.save_set_id,
+                    item.backup.backup_id,
+                )
+                if value
+            )
+            self.save_combo.add_rich_item(
+                item.display_name,
+                secondary,
+                item,
+            )
         self.save_combo.blockSignals(False)
+        self._save_changed()
+
+    def _load_save_sets(self) -> None:
+        game = self._selected_game()
+        raw = self.collection_edit.text().strip()
+        self.state_selections = ()
+        self._populate_state_combo()
         if (
             game is None
             or not raw
@@ -989,45 +1064,9 @@ class MainWindow(QMainWindow):
         def loaded(value: object) -> None:
             selections, warnings = value  # type: ignore[misc]
             self.state_selections = tuple(selections)
-            self.save_combo.blockSignals(True)
-            self.save_combo.clear()
-            self.save_combo.add_rich_item(
-                "Start a new game",
-                (
-                    "Do not restore preserved state; "
-                    "materialize explicitly with --no-state"
-                ),
-                None,
-            )
-            for item in self.state_selections:
-                availability = (
-                    f"{item.backup.present_count}/"
-                    f"{item.backup.item_count} present"
-                )
-                if item.backup.missing_count:
-                    availability += (
-                        f"; {item.backup.missing_count} missing"
-                    )
-                secondary = " • ".join(
-                    value
-                    for value in (
-                        item.backup.content_label,
-                        availability,
-                        item.backup.backup_kind,
-                        item.save_set_id,
-                        item.backup.backup_id,
-                    )
-                    if value
-                )
-                self.save_combo.add_rich_item(
-                    item.display_name,
-                    secondary,
-                    item,
-                )
-            self.save_combo.blockSignals(False)
+            self._populate_state_combo()
             if warnings:
                 self._set_log("\n".join(warnings))
-            self._save_changed()
 
         self._run_worker(
             "Discovering and verifying persistent-state backups…",
@@ -1037,6 +1076,9 @@ class MainWindow(QMainWindow):
             ),
             loaded,
         )
+
+    def _state_context_changed(self, *_args: object) -> None:
+        self._populate_state_combo()
 
     def _backend_changed(self, *_args: object) -> None:
         backend = self._selected_backend()
@@ -1066,6 +1108,7 @@ class MainWindow(QMainWindow):
         self._set_row_visible("umu", umu)
         self._filter_runners()
         self._update_default_target()
+        self._populate_state_combo()
 
         if bottles and self.service is not None:
             self._load_bottles_path()
@@ -1154,6 +1197,15 @@ class MainWindow(QMainWindow):
         )
 
     def _save_changed(self, *_args: object) -> None:
+        umu_archive = self._selected_umu_state_archive()
+        if umu_archive is not None:
+            self.state_backup_edit.setText("")
+            self._set_status(
+                f"UMU selectable state {umu_archive.archive_id}; "
+                f"profile {umu_archive.profile_id}"
+            )
+            return
+
         selection = self._selected_state_selection()
         if selection is None:
             self.state_backup_edit.setText("")
@@ -1206,10 +1258,27 @@ class MainWindow(QMainWindow):
                 bottles_path = Path(managed)
 
         selection = self._selected_state_selection()
+        umu_archive = self._selected_umu_state_archive()
         save_set_id: str | None = None
         state_backup: Path | None = None
+        umu_save_id: str | None = None
+        source_profile_id = (
+            profile.profile_id if profile is not None else None
+        )
         raw_backup = self.state_backup_edit.text().strip()
-        if raw_backup:
+
+        if umu_archive is not None:
+            if backend != "umu":
+                raise ServiceError(
+                    "UMU selectable state requires the UMU backend"
+                )
+            if raw_backup:
+                raise ServiceError(
+                    "Choose either a verified state backup or an UMU save"
+                )
+            source_profile_id = umu_archive.profile_id
+            umu_save_id = umu_archive.archive_id
+        elif raw_backup:
             state_backup = Path(raw_backup)
             if selection is not None:
                 if (
@@ -1233,13 +1302,14 @@ class MainWindow(QMainWindow):
             capsule_path=game.capsule_path,
             backend=backend,
             runner_id=runner.runner_id,
-            source_profile_id=(
-                profile.profile_id if profile is not None else None
-            ),
+            source_profile_id=source_profile_id,
             destination=destination,
             state_backup=state_backup,
             save_set_id=save_set_id,
-            no_state=state_backup is None,
+            no_state=(
+                state_backup is None and umu_save_id is None
+            ),
+            umu_save_id=umu_save_id,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=play,

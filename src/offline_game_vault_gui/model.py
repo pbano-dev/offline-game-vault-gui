@@ -40,11 +40,25 @@ def _required_string(value: dict[str, Any], key: str, label: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class UmuStateArchiveRecord:
+    profile_id: str
+    archive_id: str
+    filename: str
+    digest: str
+    policy: Literal["always", "selectable"]
+
+    @property
+    def label(self) -> str:
+        return f"{self.archive_id} ({self.policy}, {self.profile_id})"
+
+
+@dataclass(frozen=True, slots=True)
 class SourceProfile:
     profile_id: str
     platform: str
     adapter: str
     playable_backend: str | None
+    umu_state_archives: tuple[UmuStateArchiveRecord, ...] = ()
 
     @property
     def label(self) -> str:
@@ -367,6 +381,7 @@ class CompositionRequest:
     state_backup: Path | None = None
     save_set_id: str | None = None
     no_state: bool = False
+    umu_save_id: str | None = None
     bottles_path: Path | None = None
     bottle_name: str | None = None
     play: bool = False

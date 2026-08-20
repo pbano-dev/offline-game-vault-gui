@@ -235,6 +235,42 @@ class CoreClientTests(unittest.TestCase):
         with self.assertRaisesRegex(CoreError, "mutually exclusive"):
             self.client().compose(request)
 
+    def test_umu_save_id_is_forwarded(self) -> None:
+        request = CompositionRequest(
+            collection_root=Path("/collection"),
+            capsule_path=Path("/collection/capsule.json"),
+            backend="umu",
+            runner_id="runner",
+            destination=Path("/derived/example"),
+            umu_save_id="slot-a",
+        )
+        with patch.object(
+            CoreClient,
+            "run_json",
+            return_value=RESULT
+            | {
+                "backend": "umu",
+                "destination": "/derived/example",
+            },
+        ) as run_json:
+            self.client().compose(request)
+        arguments = run_json.call_args.args[0]
+        position = arguments.index("--save-id")
+        self.assertEqual(arguments[position + 1], "slot-a")
+        self.assertNotIn("--no-state", arguments)
+
+    def test_umu_save_id_rejects_non_umu_backend(self) -> None:
+        request = CompositionRequest(
+            collection_root=Path("/collection"),
+            capsule_path=Path("/collection/capsule.json"),
+            backend="direct-wine",
+            runner_id="runner",
+            destination=Path("/derived/example"),
+            umu_save_id="slot-a",
+        )
+        with self.assertRaisesRegex(CoreError, "only supported"):
+            self.client().compose(request)
+
     def test_direct_wine_preserves_play_arguments(self) -> None:
         request = CompositionRequest(
             collection_root=Path("/collection"),

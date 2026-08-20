@@ -400,11 +400,18 @@ class CompositionService:
 
         state_backup = request.state_backup
         save_set_id = request.save_set_id
+        umu_save_id = request.umu_save_id
+        if umu_save_id is not None and request.backend != "umu":
+            raise ServiceError(
+                "UMU selectable state can only be used with the UMU backend"
+            )
         if request.no_state and (
-            state_backup is not None or save_set_id is not None
+            state_backup is not None
+            or save_set_id is not None
+            or umu_save_id is not None
         ):
             raise ServiceError(
-                "Starting without state cannot also restore a state backup"
+                "Starting without state cannot also restore/select state"
             )
         if state_backup is not None:
             state_backup = state_backup.expanduser()
@@ -440,6 +447,7 @@ class CompositionService:
             state_backup=state_backup,
             save_set_id=save_set_id,
             no_state=request.no_state,
+            umu_save_id=umu_save_id,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=request.play,
@@ -528,6 +536,7 @@ class CompositionService:
                     request.state_backup is not None
                 ),
                 "no_state_requested": request.no_state,
+                "umu_save_id": request.umu_save_id,
                 "play_requested": request.play,
             },
             "result": {
