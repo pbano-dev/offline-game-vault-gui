@@ -538,7 +538,7 @@ class MainWindow(QMainWindow):
         )
         self._add_row(
             request_form,
-            "Verified state backup",
+            "Initial game state",
             self.save_combo,
             "save",
         )
@@ -971,10 +971,10 @@ class MainWindow(QMainWindow):
         self.save_combo.blockSignals(True)
         self.save_combo.clear()
         self.save_combo.add_rich_item(
-            "No state backup selected",
+            "Start a new game",
             (
-                "Allowed only when the capsule declares "
-                "no preservable state"
+                "Do not restore preserved state; "
+                "materialize explicitly with --no-state"
             ),
             None,
         )
@@ -992,10 +992,10 @@ class MainWindow(QMainWindow):
             self.save_combo.blockSignals(True)
             self.save_combo.clear()
             self.save_combo.add_rich_item(
-                "No state backup selected",
+                "Start a new game",
                 (
-                    "Allowed only when the capsule declares "
-                    "no preservable state"
+                    "Do not restore preserved state; "
+                    "materialize explicitly with --no-state"
                 ),
                 None,
             )
@@ -1239,6 +1239,7 @@ class MainWindow(QMainWindow):
             destination=destination,
             state_backup=state_backup,
             save_set_id=save_set_id,
+            no_state=state_backup is None,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=play,

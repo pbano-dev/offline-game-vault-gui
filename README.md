@@ -1,8 +1,8 @@
-# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a4
+# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a5
 
 Complete PySide6/Qt Widgets frontend for
 [`offline-game-vault`](https://github.com/pbano-dev/offline-game-vault)
-0.12.2 or newer.
+0.19.0 or newer.
 
 This source tree replaces the GTK4/libadwaita presentation layer. It does not
 replace or duplicate core preservation policy.
@@ -42,15 +42,22 @@ The suggested bottle name is recalculated when the selected game changes until
 the user edits the name manually. A deliberate manual name is then preserved
 across selection changes.
 
-## Core 0.12 state contract
+## Core 0.19 state contract
 
-One public option is used for every backend:
+Persistent state is an explicit composition choice for every backend:
 
 ```text
 compose \
   --backend bottles|direct-wine|umu \
   --state-backup <VERIFIED_BACKUP>
+
+compose \
+  --backend bottles|direct-wine|umu \
+  --no-state
 ```
+
+`--state-backup` restores preserved state. `--no-state` deliberately starts
+from zero. These choices are mutually exclusive.
 
 The GUI can obtain that directory from either:
 
@@ -75,9 +82,11 @@ whose verified payload contains save-kind items are distinguished from
 identity-only state and empty state, so a valid identity snapshot is not
 misrepresented as a saved game.
 
-The same selector remains visible for Bottles, Direct-Wine, and UMU. The GUI
-does not decide whether a capsule requires state. When no backup is selected,
-the core accepts or rejects the request according to the operational capsule.
+The same selector remains visible for Bottles, Direct-Wine, and UMU. Its
+first entry is **Start a new game**, which sends `--no-state` explicitly.
+That choice remains valid when the capsule declares preservable state and when
+verified backups already exist. Selecting a preserved backup instead sends
+`--state-backup`.
 
 Only collection-contained, relative save-set source paths are resolved.
 Absolute paths, path escapes, symlink traversal, missing directories, and

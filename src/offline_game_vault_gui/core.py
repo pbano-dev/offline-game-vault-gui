@@ -20,7 +20,7 @@ from .model import (
 )
 
 
-MINIMUM_CORE = (0, 14, 0)
+MINIMUM_CORE = (0, 19, 0)
 REQUIRED_COMMANDS = (
     "discover-bottles-path",
     "list-preserved-runners",
@@ -367,8 +367,13 @@ class CoreClient:
                 ("--source-profile", request.source_profile_id)
             )
 
-        # Core 0.14.0 exposes one backend-neutral state-restoration option.
-        if request.state_backup is not None:
+        if request.no_state:
+            if request.state_backup is not None:
+                raise CoreError(
+                    "--no-state and --state-backup are mutually exclusive"
+                )
+            arguments.append("--no-state")
+        elif request.state_backup is not None:
             arguments.extend(
                 ("--state-backup", str(request.state_backup))
             )

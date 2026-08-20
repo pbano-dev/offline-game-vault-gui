@@ -49,7 +49,8 @@ class QtPresentationContractTests(unittest.TestCase):
             "Auto (recommended)",
             "Let the core select a source layout compatible with the backend",
             "Select verified state backup",
-            "No state backup selected",
+            "Start a new game",
+            "materialize explicitly with --no-state",
             'self._set_row_visible("save", True)',
             'self._set_row_visible("state_backup", True)',
         ):
@@ -72,11 +73,12 @@ class QtPresentationContractTests(unittest.TestCase):
     ) -> None:
         core = CORE.read_text(encoding="utf-8")
         service = SERVICE.read_text(encoding="utf-8")
+        self.assertIn("if request.no_state:", core)
+        self.assertIn('arguments.append("--no-state")', core)
         self.assertIn(
-            "if request.state_backup is not None:",
+            "elif request.state_backup is not None:",
             core,
         )
-        self.assertEqual(core.count("--state-backup"), 1)
         self.assertNotIn(
             "Persistent-state restoration is exposed only for",
             service,

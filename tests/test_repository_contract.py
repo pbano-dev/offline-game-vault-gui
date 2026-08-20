@@ -62,13 +62,13 @@ class RepositoryContractTests(unittest.TestCase):
             )
         )
 
-    def test_core_minimum_is_0_14_0(self) -> None:
+    def test_core_minimum_is_0_19_0(self) -> None:
         text = (
             ROOT
             / "src/offline_game_vault_gui/core.py"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "MINIMUM_CORE = (0, 14, 0)",
+            "MINIMUM_CORE = (0, 19, 0)",
             text,
         )
 

@@ -400,6 +400,12 @@ class CompositionService:
 
         state_backup = request.state_backup
         save_set_id = request.save_set_id
+        if request.no_state and (
+            state_backup is not None or save_set_id is not None
+        ):
+            raise ServiceError(
+                "Starting without state cannot also restore a state backup"
+            )
         if state_backup is not None:
             state_backup = state_backup.expanduser()
             if (
@@ -433,6 +439,7 @@ class CompositionService:
             destination=destination,
             state_backup=state_backup,
             save_set_id=save_set_id,
+            no_state=request.no_state,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=request.play,
@@ -520,6 +527,7 @@ class CompositionService:
                 "state_backup_selected": (
                     request.state_backup is not None
                 ),
+                "no_state_requested": request.no_state,
                 "play_requested": request.play,
             },
             "result": {

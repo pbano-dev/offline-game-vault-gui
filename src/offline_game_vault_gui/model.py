@@ -366,6 +366,7 @@ class CompositionRequest:
     destination: Path | None = None
     state_backup: Path | None = None
     save_set_id: str | None = None
+    no_state: bool = False
     bottles_path: Path | None = None
     bottle_name: str | None = None
     play: bool = False

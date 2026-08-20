@@ -139,6 +139,7 @@ class CompositionServiceTests(unittest.TestCase):
         backend: str = "direct-wine",
         state_backup: Path | None = None,
         save_set_id: str | None = None,
+        no_state: bool = False,
     ) -> CompositionRequest:
         self.counter += 1
         common: dict[str, object] = {
@@ -148,6 +149,7 @@ class CompositionServiceTests(unittest.TestCase):
             "runner_id": "runner",
             "state_backup": state_backup,
             "save_set_id": save_set_id,
+            "no_state": no_state,
         }
         common["destination"] = (
             self.destination_parent
@@ -224,15 +226,42 @@ class CompositionServiceTests(unittest.TestCase):
                     )
                     self.assertTrue(result.materialized)
 
-    def test_allows_no_backup_for_state_free_capsule_contract(self) -> None:
+    def test_allows_explicit_no_state_with_preservable_capsule(
+        self,
+    ) -> None:
         state_home = self.root / "state-clean"
-        with patch.dict(
-            os.environ,
-            {"XDG_STATE_HOME": str(state_home)},
-            clear=False,
+        core = self.service.core
+        with (
+            patch.dict(
+                os.environ,
+                {"XDG_STATE_HOME": str(state_home)},
+                clear=False,
+            ),
+            patch.object(
+                core,
+                "compose",
+                wraps=core.compose,
+            ) as compose,
         ):
-            result = self.service.compose(self.request())
+            result = self.service.compose(
+                self.request(no_state=True)
+            )
         self.assertTrue(result.materialized)
+        normalized = compose.call_args.args[0]
+        self.assertTrue(normalized.no_state)
+        self.assertIsNone(normalized.state_backup)
+
+    def test_rejects_no_state_with_state_backup(self) -> None:
+        with self.assertRaisesRegex(
+            ServiceError,
+            "cannot also restore",
+        ):
+            self.service.compose(
+                self.request(
+                    state_backup=self.state_backup,
+                    no_state=True,
+                )
+            )
 
     def test_discovers_verified_backups_and_uses_auto_source(self) -> None:
         backup = (
