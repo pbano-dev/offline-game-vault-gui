@@ -1007,8 +1007,8 @@ class MainWindow(QMainWindow):
         self.save_combo.add_rich_item(
             "Start a new game",
             (
-                "Do not restore preserved state; "
-                "materialize explicitly with --no-state"
+                "Do not restore a saved game; preserve backend-required "
+                "initial configuration with --fresh-start"
             ),
             None,
         )
@@ -1306,9 +1306,10 @@ class MainWindow(QMainWindow):
             destination=destination,
             state_backup=state_backup,
             save_set_id=save_set_id,
-            no_state=(
+            fresh_start=(
                 state_backup is None and umu_save_id is None
             ),
+            no_state=False,
             umu_save_id=umu_save_id,
             bottles_path=bottles_path,
             bottle_name=bottle_name,

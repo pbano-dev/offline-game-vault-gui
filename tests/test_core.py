@@ -34,7 +34,7 @@ class CoreClientTests(unittest.TestCase):
             description="test",
         )
 
-    def test_probe_requires_0_19_0_and_commands(self) -> None:
+    def test_probe_requires_0_19_5_and_commands(self) -> None:
         client = self.client()
         calls: list[tuple[str, ...]] = []
 
@@ -49,7 +49,7 @@ class CoreClientTests(unittest.TestCase):
                 return subprocess.CompletedProcess(
                     ["ogv"],
                     0,
-                    stdout="offline-game-vault 0.19.0\n",
+                    stdout="offline-game-vault 0.19.5\n",
                     stderr="",
                 )
             return subprocess.CompletedProcess(
@@ -66,15 +66,15 @@ class CoreClientTests(unittest.TestCase):
         ):
             probe = client.probe()
 
-        self.assertEqual(probe.version, "0.19.0")
+        self.assertEqual(probe.version, "0.19.5")
         self.assertIn(("compose", "--help"), calls)
 
-    def test_probe_rejects_pre_0_19_core(self) -> None:
+    def test_probe_rejects_pre_0_19_5_core(self) -> None:
         client = self.client()
         process = subprocess.CompletedProcess(
             ["ogv"],
             0,
-            stdout="offline-game-vault 0.18.99\n",
+            stdout="offline-game-vault 0.19.4\n",
             stderr="",
         )
         with patch.object(
@@ -190,6 +190,62 @@ class CoreClientTests(unittest.TestCase):
                 "--json",
             ),
         )
+
+    def test_fresh_start_is_forwarded_for_every_backend(self) -> None:
+        for backend in ("bottles", "direct-wine", "umu"):
+            with self.subTest(backend=backend):
+                destination = f"/derived/fresh-{backend}"
+                values: dict[str, object] = {
+                    "collection_root": Path("/collection"),
+                    "capsule_path": Path("/collection/capsule.json"),
+                    "backend": backend,
+                    "runner_id": "runner",
+                    "destination": Path(destination),
+                    "fresh_start": True,
+                }
+                if backend == "bottles":
+                    values["bottle_name"] = "example"
+                request = CompositionRequest(
+                    **values  # type: ignore[arg-type]
+                )
+                with patch.object(
+                    CoreClient,
+                    "run_json",
+                    return_value=RESULT
+                    | {
+                        "backend": backend,
+                        "destination": destination,
+                    },
+                ) as run_json:
+                    self.client().compose(request)
+                arguments = run_json.call_args.args[0]
+                self.assertEqual(arguments.count("--fresh-start"), 1)
+                self.assertNotIn("--no-state", arguments)
+                self.assertNotIn("--state-backup", arguments)
+
+    def test_fresh_start_rejects_other_state_modes(self) -> None:
+        common: dict[str, object] = {
+            "collection_root": Path("/collection"),
+            "capsule_path": Path("/collection/capsule.json"),
+            "backend": "umu",
+            "runner_id": "runner",
+            "destination": Path("/derived/example"),
+            "fresh_start": True,
+        }
+        for extra in (
+            {"no_state": True},
+            {"state_backup": Path("/collection/state-backup")},
+            {"umu_save_id": "slot-a"},
+        ):
+            with self.subTest(extra=extra):
+                request = CompositionRequest(
+                    **(common | extra)  # type: ignore[arg-type]
+                )
+                with self.assertRaisesRegex(
+                    CoreError,
+                    "--fresh-start",
+                ):
+                    self.client().compose(request)
 
     def test_no_state_is_forwarded_for_every_backend(self) -> None:
         for backend in ("bottles", "direct-wine", "umu"):

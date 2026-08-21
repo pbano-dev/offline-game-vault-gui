@@ -20,7 +20,7 @@ from .model import (
 )
 
 
-MINIMUM_CORE = (0, 19, 0)
+MINIMUM_CORE = (0, 19, 5)
 REQUIRED_COMMANDS = (
     "discover-bottles-path",
     "list-preserved-runners",
@@ -367,7 +367,21 @@ class CoreClient:
                 ("--source-profile", request.source_profile_id)
             )
 
-        if request.no_state:
+        if request.fresh_start:
+            if request.no_state:
+                raise CoreError(
+                    "--fresh-start and --no-state are mutually exclusive"
+                )
+            if request.state_backup is not None:
+                raise CoreError(
+                    "--fresh-start and --state-backup are mutually exclusive"
+                )
+            if request.umu_save_id is not None:
+                raise CoreError(
+                    "--fresh-start and --save-id are mutually exclusive"
+                )
+            arguments.append("--fresh-start")
+        elif request.no_state:
             if request.state_backup is not None:
                 raise CoreError(
                     "--no-state and --state-backup are mutually exclusive"

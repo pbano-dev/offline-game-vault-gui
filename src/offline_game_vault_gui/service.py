@@ -400,10 +400,20 @@ class CompositionService:
 
         state_backup = request.state_backup
         save_set_id = request.save_set_id
+        fresh_start = request.fresh_start
         umu_save_id = request.umu_save_id
         if umu_save_id is not None and request.backend != "umu":
             raise ServiceError(
                 "UMU selectable state can only be used with the UMU backend"
+            )
+        if fresh_start and (
+            request.no_state
+            or state_backup is not None
+            or save_set_id is not None
+            or umu_save_id is not None
+        ):
+            raise ServiceError(
+                "Fresh start cannot also skip, restore, or select state"
             )
         if request.no_state and (
             state_backup is not None
@@ -446,6 +456,7 @@ class CompositionService:
             destination=destination,
             state_backup=state_backup,
             save_set_id=save_set_id,
+            fresh_start=fresh_start,
             no_state=request.no_state,
             umu_save_id=umu_save_id,
             bottles_path=bottles_path,
@@ -535,6 +546,7 @@ class CompositionService:
                 "state_backup_selected": (
                     request.state_backup is not None
                 ),
+                "fresh_start_requested": request.fresh_start,
                 "no_state_requested": request.no_state,
                 "umu_save_id": request.umu_save_id,
                 "play_requested": request.play,

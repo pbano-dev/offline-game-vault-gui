@@ -2,7 +2,7 @@
 
 Complete PySide6/Qt Widgets frontend for
 [`offline-game-vault`](https://github.com/pbano-dev/offline-game-vault)
-0.19.0 or newer.
+0.19.5 or newer.
 
 This source tree replaces the GTK4/libadwaita presentation layer. It does not
 replace or duplicate core preservation policy.
@@ -42,7 +42,7 @@ The suggested bottle name is recalculated when the selected game changes until
 the user edits the name manually. A deliberate manual name is then preserved
 across selection changes.
 
-## Core 0.19 state contract
+## Core 0.19.5 state contract
 
 Persistent state is an explicit composition choice for every backend:
 
@@ -56,16 +56,20 @@ compose \
   --no-state
 ```
 
-`--state-backup` restores preserved state. `--no-state` deliberately starts
-from zero. These choices are mutually exclusive.
+`--fresh-start` is the normal **Start a new game** intent: it omits
+restorable saved-game state while preserving backend-required initial
+configuration. `--state-backup` restores preserved state. `--no-state` is the
+stronger explicit operator control: it skips all state, including backend
+configuration declared as mandatory. These modes are mutually exclusive.
 
 For a preserved UMU-native profile, the capsule may also declare
 `umu.state_archives`. Archives with policy `always` are injected by the core
 when state is provisioned and are not user choices. Archives with policy
 `selectable` appear in **Initial game state** and the GUI sends their exact
 `--save-id`. Choosing an UMU-native save also pins the source profile that
-declares it. Choosing **Start a new game** still sends `--no-state`, which
-explicitly skips both `always` and `selectable` UMU state archives.
+declares it. Choosing **Start a new game** sends `--fresh-start`. For a preserved
+UMU-native source, the core still applies `always` archives and selects no
+`selectable` save. The GUI does not interpret those backend policies itself.
 
 The GUI can obtain a backend-neutral state-backup directory from either:
 

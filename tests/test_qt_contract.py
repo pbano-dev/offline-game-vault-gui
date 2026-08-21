@@ -50,7 +50,7 @@ class QtPresentationContractTests(unittest.TestCase):
             "Let the core select a source layout compatible with the backend",
             "Select verified state backup",
             "Start a new game",
-            "materialize explicitly with --no-state",
+            "initial configuration with --fresh-start",
             "UMU save —",
             "UmuStateArchiveRecord",
             "umu_save_id=umu_save_id",
@@ -76,6 +76,8 @@ class QtPresentationContractTests(unittest.TestCase):
     ) -> None:
         core = CORE.read_text(encoding="utf-8")
         service = SERVICE.read_text(encoding="utf-8")
+        self.assertIn("if request.fresh_start:", core)
+        self.assertIn('arguments.append("--fresh-start")', core)
         self.assertIn("if request.no_state:", core)
         self.assertIn('arguments.append("--no-state")', core)
         self.assertIn(

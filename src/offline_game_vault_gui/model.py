@@ -380,6 +380,7 @@ class CompositionRequest:
     destination: Path | None = None
     state_backup: Path | None = None
     save_set_id: str | None = None
+    fresh_start: bool = False
     no_state: bool = False
     umu_save_id: str | None = None
     bottles_path: Path | None = None

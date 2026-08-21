@@ -139,6 +139,7 @@ class CompositionServiceTests(unittest.TestCase):
         backend: str = "direct-wine",
         state_backup: Path | None = None,
         save_set_id: str | None = None,
+        fresh_start: bool = False,
         no_state: bool = False,
         umu_save_id: str | None = None,
     ) -> CompositionRequest:
@@ -150,6 +151,7 @@ class CompositionServiceTests(unittest.TestCase):
             "runner_id": "runner",
             "state_backup": state_backup,
             "save_set_id": save_set_id,
+            "fresh_start": fresh_start,
             "no_state": no_state,
             "umu_save_id": umu_save_id,
         }
@@ -227,6 +229,46 @@ class CompositionServiceTests(unittest.TestCase):
                         backend,
                     )
                     self.assertTrue(result.materialized)
+
+    def test_allows_backend_neutral_fresh_start(self) -> None:
+        state_home = self.root / "state-fresh-start"
+        core = self.service.core
+        with (
+            patch.dict(
+                os.environ,
+                {"XDG_STATE_HOME": str(state_home)},
+                clear=False,
+            ),
+            patch.object(
+                core,
+                "compose",
+                wraps=core.compose,
+            ) as compose,
+        ):
+            result = self.service.compose(
+                self.request(
+                    backend="umu",
+                    fresh_start=True,
+                )
+            )
+        self.assertTrue(result.materialized)
+        normalized = compose.call_args.args[0]
+        self.assertTrue(normalized.fresh_start)
+        self.assertFalse(normalized.no_state)
+        self.assertIsNone(normalized.state_backup)
+        self.assertIsNone(normalized.umu_save_id)
+
+    def test_rejects_fresh_start_with_other_state_mode(self) -> None:
+        with self.assertRaisesRegex(
+            ServiceError,
+            "Fresh start cannot also",
+        ):
+            self.service.compose(
+                self.request(
+                    fresh_start=True,
+                    no_state=True,
+                )
+            )
 
     def test_allows_explicit_no_state_with_preservable_capsule(
         self,
