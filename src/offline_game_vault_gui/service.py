@@ -261,6 +261,26 @@ class CompositionService:
             item for item in runners if item.supports(backend)
         )
 
+    def optional_content(
+        self,
+        collection_root: Path,
+        capsule_path: Path,
+    ) -> tuple[dict[str, Any], ...]:
+        root = self._regular_collection(collection_root)
+        raw_capsule = capsule_path.expanduser()
+        if raw_capsule.is_symlink() or not raw_capsule.is_file():
+            raise ServiceError(
+                "Optional-content capsule must be a regular file"
+            )
+        capsule = raw_capsule.resolve()
+        try:
+            capsule.relative_to(root)
+        except ValueError as exc:
+            raise ServiceError(
+                "Optional-content capsule must stay inside the collection"
+            ) from exc
+        return self.core.list_optional_content(root, capsule)
+
     def component_sets(
         self,
         collection_root: Path,
@@ -459,6 +479,7 @@ class CompositionService:
             fresh_start=fresh_start,
             no_state=request.no_state,
             umu_save_id=umu_save_id,
+            content_ids=request.content_ids,
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=request.play,
@@ -549,6 +570,7 @@ class CompositionService:
                 "fresh_start_requested": request.fresh_start,
                 "no_state_requested": request.no_state,
                 "umu_save_id": request.umu_save_id,
+                "selected_content_ids": list(request.content_ids),
                 "play_requested": request.play,
             },
             "result": {

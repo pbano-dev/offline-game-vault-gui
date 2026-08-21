@@ -36,6 +36,8 @@ try:
         QLabel,
         QLineEdit,
         QListView,
+        QListWidget,
+        QListWidgetItem,
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
@@ -504,6 +506,11 @@ class MainWindow(QMainWindow):
         self.profile_combo = RichComboBox(request_group)
         self.runner_combo = RichComboBox(request_group)
         self.save_combo = RichComboBox(request_group)
+        self.content_list = QListWidget(request_group)
+        self.content_list.setMaximumHeight(150)
+        self.content_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
         self.umu_value = QLabel(
             "Loaded when UMU is selected; diagnostic only",
             request_group,
@@ -542,6 +549,12 @@ class MainWindow(QMainWindow):
             "Initial game state",
             self.save_combo,
             "save",
+        )
+        self._add_row(
+            request_form,
+            "Optional content",
+            self.content_list,
+            "content",
         )
         self._add_row(
             request_form,
@@ -977,6 +990,7 @@ class MainWindow(QMainWindow):
         self.profile_combo.blockSignals(False)
         self._update_default_target()
         self._load_save_sets()
+        self._load_optional_content()
 
     def _umu_state_archive_options(
         self,
@@ -1104,6 +1118,7 @@ class MainWindow(QMainWindow):
         self._set_row_visible("bottles_path", bottles)
         self._set_row_visible("save", True)
         self._set_row_visible("state_backup", True)
+        self._set_row_visible("content", True)
         self._set_row_visible("arguments", not bottles)
         self._set_row_visible("umu", umu)
         self._filter_runners()
@@ -1170,6 +1185,101 @@ class MainWindow(QMainWindow):
         self._run_worker(
             "Discovering Bottles path…",
             self.service.bottles_path,
+            loaded,
+        )
+
+    def _selected_content_ids(self) -> tuple[str, ...]:
+        selected: list[str] = []
+        for index in range(self.content_list.count()):
+            item = self.content_list.item(index)
+            if item.checkState() != Qt.CheckState.Checked:
+                continue
+            content_id = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(content_id, str) and content_id:
+                selected.append(content_id)
+        return tuple(selected)
+
+    def _load_optional_content(self) -> None:
+        raw = self.collection_edit.text().strip()
+        game = self._selected_game()
+
+        self.content_list.clear()
+        if not raw or self.service is None or game is None:
+            return
+
+        expected_capsule = game.capsule_path
+
+        def loaded(value: object) -> None:
+            current = self._selected_game()
+            if (
+                current is None
+                or current.capsule_path != expected_capsule
+            ):
+                return
+
+            records = tuple(value)  # type: ignore[arg-type]
+            self.content_list.clear()
+            if not records:
+                empty = QListWidgetItem(
+                    "No optional content declared by Core"
+                )
+                empty.setFlags(
+                    empty.flags() & ~Qt.ItemFlag.ItemIsEnabled
+                )
+                self.content_list.addItem(empty)
+                self._set_status("No optional content declared")
+                return
+
+            available_count = 0
+            for record in records:
+                content_id = record["id"]
+                placement = record["placement"]
+                mode = placement["mode"]
+                destination = placement["destination"]
+                classification = record.get(
+                    "classification",
+                    "optional-content",
+                )
+                available = bool(record.get("available"))
+                label = (
+                    f"{content_id} — {classification} — "
+                    f"{mode}: {destination}"
+                )
+                if not available:
+                    label += " — unavailable"
+
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, content_id)
+                description = record.get("description")
+                if isinstance(description, str) and description:
+                    item.setToolTip(description)
+
+                if available:
+                    item.setFlags(
+                        item.flags()
+                        | Qt.ItemFlag.ItemIsUserCheckable
+                    )
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    available_count += 1
+                else:
+                    item.setFlags(
+                        item.flags()
+                        & ~Qt.ItemFlag.ItemIsEnabled
+                    )
+                self.content_list.addItem(item)
+
+            self._set_status(
+                "Resolved "
+                f"{len(records)} optional-content item(s); "
+                f"{available_count} available"
+            )
+
+        self._run_worker(
+            "Resolving optional content…",
+            lambda: self.service.optional_content(
+                Path(raw),
+                expected_capsule,
+            ),
             loaded,
         )
 
@@ -1311,6 +1421,7 @@ class MainWindow(QMainWindow):
             ),
             no_state=False,
             umu_save_id=umu_save_id,
+            content_ids=self._selected_content_ids(),
             bottles_path=bottles_path,
             bottle_name=bottle_name,
             play=play,

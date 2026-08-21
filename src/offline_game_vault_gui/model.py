@@ -383,6 +383,7 @@ class CompositionRequest:
     fresh_start: bool = False
     no_state: bool = False
     umu_save_id: str | None = None
+    content_ids: tuple[str, ...] = ()
     bottles_path: Path | None = None
     bottle_name: str | None = None
     play: bool = False

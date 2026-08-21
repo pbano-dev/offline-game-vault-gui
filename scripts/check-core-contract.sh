@@ -35,9 +35,9 @@ match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", version_text)
 if match is None:
     raise SystemExit(f"Cannot parse core version: {version_text!r}")
 version = tuple(int(value) for value in match.groups())
-if version < (0, 19, 5):
+if version < (0, 19, 7):
     raise SystemExit(
-        f"Core {'.'.join(match.groups())} is too old; 0.19.5+ required"
+        f"Core {'.'.join(match.groups())} is too old; 0.19.7+ required"
     )
 for token in (
     "--backend",
@@ -45,6 +45,7 @@ for token in (
     "--state-backup",
     "--fresh-start",
     "--no-state",
+    "--content-id",
     "--save-id",
     "--bottles-path",
     "--bottle-name",
@@ -61,6 +62,7 @@ for token in ("--capsule", "--backup", "--json"):
 print(
     "CORE CONTRACT PASSED: "
     f"version={'.'.join(match.groups())}, "
-    "backend-neutral-state=yes, fresh-start=yes, explicit-no-state=yes"
+    "backend-neutral-state=yes, fresh-start=yes, "
+    "explicit-no-state=yes, optional-content=yes"
 )
 PY

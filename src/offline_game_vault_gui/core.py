@@ -20,7 +20,7 @@ from .model import (
 )
 
 
-MINIMUM_CORE = (0, 19, 5)
+MINIMUM_CORE = (0, 19, 7)
 REQUIRED_COMMANDS = (
     "discover-bottles-path",
     "list-preserved-runners",
@@ -234,6 +234,59 @@ class CoreClient:
             raise CoreError("Runner warnings must be strings")
         return runners, tuple(raw_warnings)
 
+    def list_optional_content(
+        self,
+        collection_root: Path,
+        capsule_path: Path,
+    ) -> tuple[dict[str, Any], ...]:
+        value = self.run_json(
+            (
+                "list-optional-content",
+                "--collection-root",
+                str(collection_root),
+                "--capsule",
+                str(capsule_path),
+                "--json",
+            )
+        )
+        if value.get("schema") != 0:
+            raise CoreError("Unsupported optional-content catalog schema")
+        raw = value.get("items")
+        if not isinstance(raw, list):
+            raise CoreError("Optional-content items is not an array")
+
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                raise CoreError(
+                    "Optional-content catalog contains a non-object entry"
+                )
+            content_id = item.get("id")
+            available = item.get("available")
+            placement = item.get("placement")
+            if (
+                not isinstance(content_id, str)
+                or not content_id
+                or not isinstance(available, bool)
+                or not isinstance(placement, dict)
+                or placement.get("mode") not in {
+                    "game-overlay",
+                    "sidecar",
+                }
+                or not isinstance(placement.get("destination"), str)
+            ):
+                raise CoreError(
+                    "Optional-content catalog item has invalid structure"
+                )
+            if content_id in seen:
+                raise CoreError(
+                    f"Duplicate optional-content id: {content_id}"
+                )
+            seen.add(content_id)
+            result.append(dict(item))
+        return tuple(result)
+
     def list_component_sets(
         self,
         collection_root: Path,
@@ -366,6 +419,9 @@ class CoreClient:
             arguments.extend(
                 ("--source-profile", request.source_profile_id)
             )
+
+        for content_id in request.content_ids:
+            arguments.extend(("--content-id", content_id))
 
         if request.fresh_start:
             if request.no_state:

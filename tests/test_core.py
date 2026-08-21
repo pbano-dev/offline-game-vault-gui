@@ -34,7 +34,7 @@ class CoreClientTests(unittest.TestCase):
             description="test",
         )
 
-    def test_probe_requires_0_19_5_and_commands(self) -> None:
+    def test_probe_requires_0_19_7_and_commands(self) -> None:
         client = self.client()
         calls: list[tuple[str, ...]] = []
 
@@ -49,7 +49,7 @@ class CoreClientTests(unittest.TestCase):
                 return subprocess.CompletedProcess(
                     ["ogv"],
                     0,
-                    stdout="offline-game-vault 0.19.5\n",
+                    stdout="offline-game-vault 0.19.7\n",
                     stderr="",
                 )
             return subprocess.CompletedProcess(
@@ -66,15 +66,15 @@ class CoreClientTests(unittest.TestCase):
         ):
             probe = client.probe()
 
-        self.assertEqual(probe.version, "0.19.5")
+        self.assertEqual(probe.version, "0.19.7")
         self.assertIn(("compose", "--help"), calls)
 
-    def test_probe_rejects_pre_0_19_5_core(self) -> None:
+    def test_probe_rejects_pre_0_19_7_core(self) -> None:
         client = self.client()
         process = subprocess.CompletedProcess(
             ["ogv"],
             0,
-            stdout="offline-game-vault 0.19.4\n",
+            stdout="offline-game-vault 0.19.6\n",
             stderr="",
         )
         with patch.object(

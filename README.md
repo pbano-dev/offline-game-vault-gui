@@ -1,8 +1,8 @@
-# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a5
+# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a6
 
 Complete PySide6/Qt Widgets frontend for
 [`offline-game-vault`](https://github.com/pbano-dev/offline-game-vault)
-0.19.5 or newer.
+0.19.7 or newer.
 
 This source tree replaces the GTK4/libadwaita presentation layer. It does not
 replace or duplicate core preservation policy.
@@ -32,6 +32,12 @@ capsule.json
 
 The GUI never derives prefix paths, save paths, AppIDs, DLC ownership, runner
 fallbacks, or backend launch commands.
+
+Optional content follows the same authority boundary. The GUI asks Core
+`list-optional-content` for the selected capsule, shows the returned records,
+and forwards only user-checked IDs as repeatable `compose --content-id`
+arguments. It never infers placement, backend compatibility, or availability;
+those remain Core decisions.
 
 For Bottles, the destination selected in the GUI is the authoritative external
 materialization root. The GUI passes it to the core and later invokes only the
