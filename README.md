@@ -1,4 +1,4 @@
-# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a6
+# Offline Game Vault GUI — PySide6/Qt Widgets 0.5.0a7
 
 Complete PySide6/Qt Widgets frontend for
 [`offline-game-vault`](https://github.com/pbano-dev/offline-game-vault)
@@ -212,3 +212,18 @@ Application source: Apache License 2.0.
 
 PySide6/Qt for Python is a separate third-party dependency distributed under
 its own licensing terms. See `docs/THIRD_PARTY.md`.
+
+
+## Windows preparation status (Core 0.20.0)
+
+After composition, Result shows whether the native Windows launch files were
+prepared or why preparation was blocked. Preparation does not mean the game
+has been tested on Windows. No operating-system selector is added; Linux still
+uses the requested backend and runner, and `JUGAR_WINDOWS.bat` uses the native
+Windows host. The files share the same materialized game payload.
+
+Play and Verify dispatch to the native PowerShell runtime when invoked on
+Windows. The full GUI/composition flow remains Linux-oriented; native Windows
+composition and removal are not implemented. The standalone `.bat` launchers
+do not require this GUI, Python or `ogv` on the Windows host. See Core's
+`docs/WINDOWS_PORTABILITY.md` for requirements and interrupted-session recovery.

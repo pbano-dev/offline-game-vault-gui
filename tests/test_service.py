@@ -552,6 +552,33 @@ class CompositionServiceTests(unittest.TestCase):
                 self.request(save_set_id="main")
             )
 
+    def test_windows_dispatch_uses_fixed_powershell_arguments(self):
+        destination = self.destination_parent / "existing windows & portable"
+        runtime = destination / "metadata/windows/runtime.ps1"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("# fixture")
+        with patch("offline_game_vault_gui.service.sys.platform", "win32"), patch.dict(os.environ, {"SystemRoot": str(self.root / "system")}):
+            with patch("offline_game_vault_gui.service.subprocess.run") as run:
+                self.service.run_operation(destination, "play")
+                command = run.call_args.args[0]
+                self.assertEqual(command[-3:], [str(runtime), "-Action", "Play"])
+                self.assertFalse(run.call_args.kwargs.get("shell", False))
+            with self.assertRaisesRegex(ServiceError, "extra arguments"):
+                self.service.run_operation(destination, "play", ("&echo",))
+            with self.assertRaisesRegex(ServiceError, "removal is not supported"):
+                self.service.run_operation(destination, "remove")
+
+    def test_windows_dispatch_rejects_linked_runtime_directory(self):
+        destination = self.destination_parent / "linked windows"
+        real = destination / "real"
+        real.mkdir(parents=True)
+        (real / "runtime.ps1").write_text("# fixture")
+        (destination / "metadata").mkdir()
+        (destination / "metadata/windows").symlink_to(real, target_is_directory=True)
+        with patch("offline_game_vault_gui.service.sys.platform", "win32"):
+            with self.assertRaisesRegex(ServiceError, "unsafe"):
+                self.service.run_operation(destination, "play")
+
     def test_generated_operation_must_not_be_symlink(self) -> None:
         destination = self.destination_parent / "existing"
         destination.mkdir()

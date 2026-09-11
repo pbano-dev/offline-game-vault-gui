@@ -14,6 +14,16 @@ from offline_game_vault_gui.model import (
 
 
 class ModelTests(unittest.TestCase):
+    def test_windows_preparation_never_implies_functional_acceptance(self):
+        result = CompositionResult("game", "umu", "runner", "profile", Path("/tmp/game"), True, False, None)
+        self.assertIn("no preparation information", result.windows_summary)
+        result.backend_result["windows"] = {"status": "prepared-unverified", "functional_acceptance": True}
+        self.assertIn("untested", result.windows_summary)
+        self.assertIn("JUGAR_WINDOWS.bat", result.windows_summary)
+        result.backend_result["windows"] = {"status": "blocked", "issues": ["Unmapped save path"]}
+        self.assertIn("Unmapped save path", result.windows_summary)
+        self.assertIn("blocked", result.windows_summary)
+
     def test_runner_from_dict(self) -> None:
         runner = RunnerRecord.from_dict(
             {

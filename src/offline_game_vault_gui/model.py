@@ -402,6 +402,23 @@ class CompositionResult:
     play_complete: bool | None
     backend_result: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def windows_summary(self) -> str:
+        native = self.backend_result.get("windows")
+        if not isinstance(native, dict):
+            return "Windows: no preparation information from the selected Core."
+        if native.get("status") == "prepared-unverified":
+            return (
+                "Windows: launch files prepared; game compatibility remains untested. "
+                "Use JUGAR_WINDOWS.bat on Windows and JUGAR_LINUX.sh on Linux. "
+                "Native dependencies must be available on Windows."
+            )
+        if native.get("status") == "blocked":
+            issues = native.get("issues", [])
+            reason = "; ".join(str(item) for item in issues) if isinstance(issues, list) else ""
+            return "Windows preparation blocked" + (": " + reason if reason else ".")
+        return "Windows: unknown preparation status; compatibility has not been established."
+
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "CompositionResult":
         if value.get("schema") != 0:

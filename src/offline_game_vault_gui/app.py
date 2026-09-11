@@ -681,6 +681,10 @@ class MainWindow(QMainWindow):
         status_font.setBold(True)
         self.status_label.setFont(status_font)
         self.status_label.setWordWrap(True)
+        self.windows_status = QLabel(result_group)
+        self.windows_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.windows_status.setWordWrap(True)
+        self.windows_status.setVisible(False)
         self.log = QPlainTextEdit(result_group)
         self.log.setReadOnly(True)
         self.log.setLineWrapMode(
@@ -691,6 +695,7 @@ class MainWindow(QMainWindow):
         self.log.setFont(monospace)
         self.log.setMinimumHeight(230)
         result_layout.addWidget(self.status_label)
+        result_layout.addWidget(self.windows_status)
         result_layout.addWidget(self.log, 1)
         outer.addWidget(result_group, 1)
 
@@ -1436,9 +1441,13 @@ class MainWindow(QMainWindow):
             return
 
         assert self.service is not None
+        self.windows_status.clear()
+        self.windows_status.setVisible(False)
 
         def complete(value: object) -> None:
             result = value
+            self.windows_status.setText(result.windows_summary)
+            self.windows_status.setVisible(True)
             self.last_destination = (
                 result.destination  # type: ignore[attr-defined]
             )

@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 import time
 from typing import Any, Sequence
 
@@ -324,9 +325,20 @@ class CompositionService:
             )
 
         script = self._operation_path(destination, operation)
+        command = [str(script), *arguments]
+        if sys.platform == "win32":
+            if arguments:
+                raise ServiceError("Windows launch uses the preserved arguments; extra arguments are not supported")
+            system_root = os.environ.get("SystemRoot")
+            if not system_root:
+                raise ServiceError("Windows SystemRoot is unavailable")
+            powershell = Path(system_root) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+            command = [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive",
+                       "-ExecutionPolicy", "Bypass", "-File", str(script),
+                       "-Action", {"play": "Play", "verify": "Verify"}[operation]]
         try:
             return subprocess.run(
-                [str(script), *arguments],
+                command,
                 cwd=str(destination),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -508,7 +520,12 @@ class CompositionService:
                 "The materialization is not a regular directory"
             )
         root = destination.resolve()
-        script = root / OPERATIONS[operation]
+        if sys.platform == "win32":
+            if operation == "remove":
+                raise ServiceError("Native Windows removal is not supported; preserve progress and recover any interrupted session before removing the folder")
+            script = root / "metadata/windows/runtime.ps1"
+        else:
+            script = root / OPERATIONS[operation]
         try:
             info = script.lstat()
         except FileNotFoundError as exc:
@@ -519,12 +536,18 @@ class CompositionService:
         if (
             stat.S_ISLNK(info.st_mode)
             or not stat.S_ISREG(info.st_mode)
-            or not info.st_mode & stat.S_IXUSR
-            or script.resolve().parent != root
+            or (sys.platform != "win32" and not info.st_mode & stat.S_IXUSR)
+            or not script.resolve().is_relative_to(root)
         ):
             raise ServiceError(
                 f"Generated operation is unsafe: {script.name}"
             )
+        current = script
+        while current != root:
+            metadata = current.lstat()
+            if current.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400:
+                raise ServiceError(f"Generated operation is unsafe: {script.name}")
+            current = current.parent
         return script
 
     def _write_receipt(

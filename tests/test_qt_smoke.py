@@ -33,6 +33,7 @@ class QtSmokeTests(unittest.TestCase):
             "Offline Game Vault",
             window.windowTitle(),
         )
+        self.assertTrue(window.windows_status.isHidden())
         window.close()
         application.processEvents()
 
